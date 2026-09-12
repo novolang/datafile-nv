@@ -1,0 +1,345 @@
+// dfbase.nv — the base directories: one lookup in `dfplat`'s two
+// tables, then one join.
+//
+// Every body here is a `todo()`; the signatures are the design.
+//
+// EVERY FUNCTION IN THIS MODULE IS `[]`.  The environment was read
+// once into the `DfEnv`; nothing here reads it again, nothing here
+// touches the disk, and nothing here can fail.  That is the half of a
+// directories library that ought to be pure, and in `directories` and
+// `platformdirs` it is not — which is why neither of them can tell you
+// what a Windows machine would answer.
+//
+// `base_dir(e, role)` IS THE WHOLE MODULE.  The named accessors —
+// `config_dir`, `cache_dir`, and the rest — are one-line calls to it.
+// They exist because `dfbase.config_dir(e)` reads better at a call
+// site than `dfbase.base_dir(e, DfConfig)`, and because a reader
+// browsing the reference wants to see the list.  They do not exist
+// because they do anything different.
+//
+// `""` MEANS "THERE IS NO SUCH DIRECTORY", AND `source_of` SAYS WHY.
+// Four reasons: the platform has no directory for this role, there is
+// no home directory to hang the default off, an override was set and
+// ignored because it is relative, or — the ordinary case — it came
+// from the default or from a variable that is named.  A person asking
+// "why is my cache there" gets the whole answer from one call, and a
+// program can log it.
+//
+// THE SYSTEM-WIDE DIRECTORIES ARE A LIST AND NOT A PATH.
+// `XDG_CONFIG_DIRS` is colon-separated and ordered; `/Library` on
+// macOS is one entry; `%PROGRAMDATA%` on Windows is one entry.  A
+// library that answered the first entry would silently ignore a
+// site administrator's second one, so these two answer lists — in
+// precedence order, highest first — and a caller that wants one takes
+// the head.
+
+use dfenv
+use dfplat
+
+// The directory a role resolves to in this environment, or `""`.
+//
+// The one function; everything else in this module is a call to it
+// with the role spelled out.
+//
+// ```novo
+// use dfbase
+// use dfenv
+//
+// fn main() [io]
+//     println(dfbase.base_dir(dfenv.bare(DfLinux, "/home/ada"), DfCache))
+// ```
+pub fn base_dir(e: dfenv.DfEnv, r: dfplat.DfRole) -> Str []
+    todo("datafile-nv.dfbase.base_dir")
+
+// Why `base_dir` answered what it answered.
+//
+// ```novo
+// use dfbase
+// use dfenv
+// use dfplat
+//
+// fn main() [io]
+//     let e = dfenv.bare(DfWindows, "C:/Users/ada")
+//     println(dfplat.source_name(dfbase.source_of(e, DfRuntime)))
+// ```
+pub fn source_of(e: dfenv.DfEnv, r: dfplat.DfRole) -> dfplat.DfSource []
+    todo("datafile-nv.dfbase.source_of")
+
+// True when this environment has a directory for this role.
+//
+// `false` when the platform does not carry the role and when there is
+// no home directory; `source_of` distinguishes the two.
+//
+// ```novo
+// use dfbase
+// use dfenv
+//
+// fn main() [io]
+//     let has = dfbase.has_base_dir(dfenv.bare(DfMacos, "/Users/ada"), DfRuntime)
+//     println("${has}")
+// ```
+pub fn has_base_dir(e: dfenv.DfEnv, r: dfplat.DfRole) -> Bool []
+    todo("datafile-nv.dfbase.has_base_dir")
+
+// Every role paired with the directory it resolves to, in
+// `dfplat.roles` order, roles this platform does not carry included
+// with an empty path.
+//
+// What a `--paths` flag prints.  The absent roles are IN the list
+// rather than filtered out of it, because a person comparing two
+// platforms' output wants the rows to line up.
+//
+// ```novo
+// use dfbase
+// use dfenv
+//
+// fn main() [io]
+//     println("${dfbase.layout(dfenv.capture()).len()}")
+// ```
+pub fn layout(e: dfenv.DfEnv) -> [(dfplat.DfRole, Str)] []
+    todo("datafile-nv.dfbase.layout")
+
+// The home directory: `$HOME`, `%USERPROFILE%`, or `""`.
+//
+// ```novo
+// use dfbase
+// use dfenv
+//
+// fn main() [io]
+//     println(dfbase.home_dir(dfenv.capture()))
+// ```
+pub fn home_dir(e: dfenv.DfEnv) -> Str []
+    todo("datafile-nv.dfbase.home_dir")
+
+// Configuration a person edits.
+//
+// `$XDG_CONFIG_HOME` or `~/.config`; `~/Library/Application Support`;
+// `%APPDATA%`.
+//
+// ```novo
+// use dfbase
+// use dfenv
+//
+// fn main() [io]
+//     println(dfbase.config_dir(dfenv.bare(DfLinux, "/home/ada")))
+// ```
+pub fn config_dir(e: dfenv.DfEnv) -> Str []
+    todo("datafile-nv.dfbase.config_dir")
+
+// Configuration that must not roam between machines.
+//
+// The same as `config_dir` on Linux and macOS.  `%LOCALAPPDATA%` on
+// Windows, which is the difference this function exists for: a path,
+// a machine identifier or a socket name written into a roaming
+// profile follows a person to another machine and is wrong there.
+//
+// ```novo
+// use dfbase
+// use dfenv
+//
+// fn main() [io]
+//     println(dfbase.config_local_dir(dfenv.bare(DfWindows, "C:/Users/ada")))
+// ```
+pub fn config_local_dir(e: dfenv.DfEnv) -> Str []
+    todo("datafile-nv.dfbase.config_local_dir")
+
+// Data the program produced and would like kept.
+//
+// `$XDG_DATA_HOME` or `~/.local/share`; `~/Library/Application
+// Support`; `%APPDATA%`.
+//
+// ```novo
+// use dfbase
+// use dfenv
+//
+// fn main() [io]
+//     println(dfbase.data_dir(dfenv.bare(DfLinux, "/home/ada")))
+// ```
+pub fn data_dir(e: dfenv.DfEnv) -> Str []
+    todo("datafile-nv.dfbase.data_dir")
+
+// Data that must not roam: an index, a compiled artifact, anything
+// tied to this machine.
+//
+// ```novo
+// use dfbase
+// use dfenv
+//
+// fn main() [io]
+//     println(dfbase.data_local_dir(dfenv.bare(DfWindows, "C:/Users/ada")))
+// ```
+pub fn data_local_dir(e: dfenv.DfEnv) -> Str []
+    todo("datafile-nv.dfbase.data_local_dir")
+
+// Data the program can recompute, and that anything is entitled to
+// delete.
+//
+// `$XDG_CACHE_HOME` or `~/.cache`; `~/Library/Caches`;
+// `%LOCALAPPDATA%`.
+//
+// ```novo
+// use dfbase
+// use dfenv
+//
+// fn main() [io]
+//     println(dfbase.cache_dir(dfenv.bare(DfMacos, "/Users/ada")))
+// ```
+pub fn cache_dir(e: dfenv.DfEnv) -> Str []
+    todo("datafile-nv.dfbase.cache_dir")
+
+// State between runs that is neither configuration nor data: a
+// history file, a last-session record, a resume cursor.
+//
+// `$XDG_STATE_HOME` or `~/.local/state` on Linux.  macOS and Windows
+// have no separate state directory and this answers their data
+// directory — which is the honest answer rather than an invented one,
+// and `source_of` still reports it as a default.
+//
+// ```novo
+// use dfbase
+// use dfenv
+//
+// fn main() [io]
+//     println(dfbase.state_dir(dfenv.bare(DfLinux, "/home/ada")))
+// ```
+pub fn state_dir(e: dfenv.DfEnv) -> Str []
+    todo("datafile-nv.dfbase.state_dir")
+
+// Where a socket or a pid file goes, emptied when the session ends.
+//
+// `$XDG_RUNTIME_DIR` on Linux, and `""` when it is unset — the
+// specification has no fallback for it, and the usual invention,
+// `/tmp`, is a directory other users can write to.  Absent on macOS
+// and Windows.
+//
+// A program that needs a socket and gets `""` should fall back
+// deliberately, in its own code, where the decision is visible: that
+// is why this answers `""` rather than guessing.
+//
+// ```novo
+// use dfbase
+// use dfenv
+//
+// fn main() [io]
+//     println(dfbase.runtime_dir(dfenv.capture()))
+// ```
+pub fn runtime_dir(e: dfenv.DfEnv) -> Str []
+    todo("datafile-nv.dfbase.runtime_dir")
+
+// Where log files go.
+//
+// `$XDG_STATE_HOME` on Linux — the specification's own answer, and not
+// the cache, because a log deleted by a cache cleaner is a log that
+// was not there when it was wanted.  `~/Library/Logs` on macOS.
+// `%LOCALAPPDATA%` on Windows.
+//
+// ```novo
+// use dfbase
+// use dfenv
+//
+// fn main() [io]
+//     println(dfbase.log_dir(dfenv.bare(DfMacos, "/Users/ada")))
+// ```
+pub fn log_dir(e: dfenv.DfEnv) -> Str []
+    todo("datafile-nv.dfbase.log_dir")
+
+// macOS's `~/Library/Preferences`, which is NOT the same place as its
+// application-support directory.
+//
+// The same as `config_dir` on every other platform.  It exists
+// because a macOS program writing a `.plist` writes it here and
+// nowhere else, and a port that put one in Application Support
+// produces a file the platform's own tools will not find.
+//
+// ```novo
+// use dfbase
+// use dfenv
+//
+// fn main() [io]
+//     println(dfbase.preference_dir(dfenv.bare(DfMacos, "/Users/ada")))
+// ```
+pub fn preference_dir(e: dfenv.DfEnv) -> Str []
+    todo("datafile-nv.dfbase.preference_dir")
+
+// Where a user-installed executable goes: `$XDG_BIN_HOME` or
+// `~/.local/bin`.
+//
+// Linux only.  `""` on macOS and Windows, where an executable
+// goes is an installer's decision and not a convention.
+//
+// ```novo
+// use dfbase
+// use dfenv
+//
+// fn main() [io]
+//     println(dfbase.executable_dir(dfenv.bare(DfLinux, "/home/ada")))
+// ```
+pub fn executable_dir(e: dfenv.DfEnv) -> Str []
+    todo("datafile-nv.dfbase.executable_dir")
+
+// The system-wide configuration directories, highest precedence
+// first.
+//
+// `$XDG_CONFIG_DIRS` split on `:`, or `/etc/xdg`; `/Library/Application
+// Support` on macOS; `%PROGRAMDATA%` on Windows.  A LIST, because
+// `XDG_CONFIG_DIRS` is ordered and a site administrator's second entry
+// is not decoration.
+//
+// ```novo
+// use dfbase
+// use dfenv
+//
+// fn main() [io]
+//     for d in dfbase.site_config_dirs(dfenv.capture())
+//         println(d)
+// ```
+pub fn site_config_dirs(e: dfenv.DfEnv) -> [Str] []
+    todo("datafile-nv.dfbase.site_config_dirs")
+
+// The system-wide data directories, highest precedence first.
+//
+// `$XDG_DATA_DIRS` split on `:`, or `/usr/local/share:/usr/share`.
+//
+// ```novo
+// use dfbase
+// use dfenv
+//
+// fn main() [io]
+//     for d in dfbase.site_data_dirs(dfenv.capture())
+//         println(d)
+// ```
+pub fn site_data_dirs(e: dfenv.DfEnv) -> [Str] []
+    todo("datafile-nv.dfbase.site_data_dirs")
+
+// Every directory a configuration file could be read from, in
+// precedence order: the user's first, then the site's.
+//
+// The list a layered configuration reader wants — config-nv's
+// `cfgstack.with_files` takes exactly this, lowest rank last.  It is
+// here rather than in config-nv because the precedence is a platform
+// convention and not a configuration-library decision.
+//
+// ```novo
+// use dfbase
+// use dfenv
+//
+// fn main() [io]
+//     for d in dfbase.config_search_path(dfenv.capture())
+//         println(d)
+// ```
+pub fn config_search_path(e: dfenv.DfEnv) -> [Str] []
+    todo("datafile-nv.dfbase.config_search_path")
+
+// Every directory a data file could be read from, in precedence
+// order.
+//
+// ```novo
+// use dfbase
+// use dfenv
+//
+// fn main() [io]
+//     for d in dfbase.data_search_path(dfenv.capture())
+//         println(d)
+// ```
+pub fn data_search_path(e: dfenv.DfEnv) -> [Str] []
+    todo("datafile-nv.dfbase.data_search_path")

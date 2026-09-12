@@ -1,0 +1,48 @@
+[package]
+name        = "datafile-nv"
+version     = "0.0.1"
+description = "Where a program's config, data, cache, state, runtime and log directories live on Linux, macOS and Windows.  The environment is read ONCE into a DfEnv value and every directory is arithmetic over it, so the whole platform table is testable on any machine — a Windows layout answers correctly on Linux.  Project-scoped paths, the XDG rule that a relative override is ignored, the mode a secret store needs, and the novo toolchain's own NOVO_HOME layout as a worked example.  Interface only — every body is a todo()."
+license     = "Apache-2.0"
+
+# An INTERFACE release: every `pub fn` body is a `todo()`, so the
+# signatures and the effect rows are published and nothing is
+# implemented.  `novo pkg publish` recognises the shape and requires
+# both the draft stability and the 0.0.x version; the first
+# implementation is the 0.1.0 published over it.
+stability   = "draft"
+
+# `host`, and the rows are as narrow as the work allows.
+#
+# Two effects and no others.  `[io]` is the ENVIRONMENT — `env.get`,
+# `env.home`, `env.os` — because SPEC § 5.1 puts the environment under
+# `[io]` along with pipes and processes; there is no `[env]` label to
+# declare, and a package that wanted one would still be charged `[io]`.
+# `[fs]` is the disk: creating a directory, checking one exists,
+# reading `user-dirs.dirs`.
+#
+# The consequence a caller can use: `dfenv.capture` is the only `[io]`
+# function that a program has to call, and every directory in
+# `dfbase`, `dfapp`, `dfplat` and `dfnovo` is `[]` arithmetic over the
+# value it returns.  So a test names the platform and the variables it
+# wants and gets the same answers with no environment, no home
+# directory and no disk at all.
+layer       = "host"
+
+category    = "data"
+
+tags        = ["directories", "platformdirs", "xdg", "config", "cache", "appdirs", "paths"]
+repository  = "https://github.com/novolang/datafile-nv"
+maintainers = ["novo-lang"]
+novo        = ">= 0.8.9"
+
+# A library: no `main`, so `novo pkg build` type-checks and
+# effect-checks every module under `src/` and writes no binary.
+
+[docs.pages]
+"README.md" = "The environment read once, and every directory as arithmetic over it"
+
+[dependencies]
+# None.  The whole package is `std.env`, `std.fs` and string
+# arithmetic.  A package that answers "where does my config live"
+# is depended on by configuration readers, loggers and installers
+# alike, and every dependency it took would be one they all pay for.

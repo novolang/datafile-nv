@@ -1,0 +1,316 @@
+// dfmake.nv — the half that touches the disk: create the directory,
+// and make it private when a secret is going into it.
+//
+// Every body here is a `todo()`; the signatures are the design.
+//
+// EVERY ROW HERE IS `[fs]` AND NOTHING ELSE.  The environment was
+// already read; a `DfEnv` goes in and no variable is consulted again.
+// So a program can hold one snapshot, compute every path with no
+// effects at all, and reach this module exactly once — which is also
+// what makes "did it create the right directory" a test with a
+// `DfEnv` built by hand and a temporary root.
+//
+// PRIVATE IS A MODE THE CALLER ASKS FOR, AND THE ANSWER IS CHECKED.
+// A keyring, a token cache and a session store all want `0700`, and
+// the failure that matters is not "the create failed" — it is "the
+// create succeeded and the directory is `0755` because a umask or an
+// inherited parent made it so".  So `ensure_dir` with `DfModePrivate`
+// creates the directory AND verifies the mode it ended up with, and
+// answers `DfModeTooWide` naming both numbers when they disagree.
+// A caller that wrote a token into a directory it believed was private
+// has no way to discover otherwise afterwards.
+//
+// WINDOWS CANNOT DO IT, AND SAYS SO.  There are no POSIX mode bits on
+// Windows and this package does not read ACLs, so `DfModePrivate`
+// there is `DfModeUnsupported` — a refusal, not a silent success.  A
+// library that returned `Ok` would tell a credential store its secret
+// is protected on the one platform where it is not.
+//
+// THE CREATE IS RECURSIVE AND THE CHECK IS NOT.  `ensure_dir` makes
+// every missing parent, because `~/.config/novo/sessions` needs three;
+// the mode is applied to the LEAF only, because tightening
+// `~/.config` to `0700` would be this package making a decision about
+// a directory that is not its program's.
+//
+// NOTHING HERE DELETES.  A directories library that could remove a
+// tree would be a directories library that could remove the wrong
+// tree; `tempdir-nv` owns removal, behind a root value that says what
+// it is entitled to delete.
+
+use dfenv
+use dfapp
+use dfplat
+
+// What permissions a created directory should end up with.
+//
+// ```novo
+// use dfmake
+//
+// fn main() [io]
+//     println("${dfmake.mode_bits(DfModePrivate)}")
+// ```
+pub enum DfMode
+    // Whatever the platform gives a new directory — `0777` less the
+    // umask on Unix.  The right answer for a cache or a log directory,
+    // and the one that does not fight a site's own policy.
+    DfModeDefault
+    // `0700`: only the owner may enter.  What a token, a key or a
+    // session store needs, and the mode `ensure_dir` VERIFIES rather
+    // than merely requests.
+    DfModePrivate
+    // An explicit POSIX mode, for a caller with a policy of its own.
+    // The number is the mode, not a umask.
+    DfModeExplicit(bits: Int)
+
+// The POSIX mode a `DfMode` asks for, or `-1` for `DfModeDefault`,
+// which asks for none.
+//
+// ```novo
+// use dfmake
+//
+// fn main() [io]
+//     let bits = dfmake.mode_bits(DfModeExplicit(dfmake.octal("0750")))
+//     println("${bits}")
+// ```
+pub fn mode_bits(m: DfMode) -> Int []
+    todo("datafile-nv.dfmake.mode_bits")
+
+// The integer a POSIX mode written in octal names: `octal("0700")` is
+// 448.
+//
+// This exists because **novo-lang has no octal integer literal**.  `0x`
+// and `0b` are both spelled; `0o` is a parse error.  A file mode is
+// octal in every reference, every manual page and every `ls -l`, so
+// without this function the only way to write one in a caller's source
+// is `0b111_000_000` or the decimal 448, and both are values a reviewer
+// cannot check against `chmod 700`.
+//
+// A leading `0` is optional and anything that is not three or four
+// octal digits answers `-1`.
+//
+// ```novo
+// use dfmake
+//
+// fn main() [io]
+//     let bits = dfmake.octal("0700")
+//     println("${bits}")
+// ```
+pub fn octal(text: Str) -> Int []
+    todo("datafile-nv.dfmake.octal")
+
+// The mode in the octal form a person reads: `0700`, `0755`.
+//
+// For a message.  A mode printed in decimal is a mode nobody can
+// check against `ls -l`.
+//
+// ```novo
+// use dfmake
+//
+// fn main() [io]
+//     println(dfmake.mode_octal(dfmake.octal("0700")))
+// ```
+pub fn mode_octal(bits: Int) -> Str []
+    todo("datafile-nv.dfmake.mode_octal")
+
+// True when a mode grants nothing to the group or to others.
+//
+// The predicate `DfModePrivate` is checked with.
+//
+// ```novo
+// use dfmake
+//
+// fn main() [io]
+//     let ok = dfmake.mode_is_private(dfmake.octal("0700"))
+//     println("${ok}")
+// ```
+pub fn mode_is_private(bits: Int) -> Bool []
+    todo("datafile-nv.dfmake.mode_is_private")
+
+// Create a directory and every missing parent, then apply and verify
+// the mode on the leaf.
+//
+// Succeeds when the directory already exists with an acceptable mode —
+// this is `ensure`, not `create`, and a program that runs twice must
+// not fail the second time.  `DfModeTooWide` when the directory exists
+// with a wider mode than `DfModePrivate` asked for and the mode could
+// not be tightened.
+//
+// An empty path is `DfHomeUnknown`, because the only way a caller
+// reaches here with one is by passing an accessor's "there is no such
+// directory" answer straight through, and creating the current
+// working directory is not what they meant.
+//
+// ```novo
+// use dfmake
+//
+// fn main() [io, fs]
+//     match dfmake.ensure_dir("/tmp/novo-example", DfModeDefault)
+//         Ok(_)  => println("ready")
+//         Err(f) => println(f.message())
+// ```
+pub fn ensure_dir(path: Str, m: DfMode) -> Result<Unit, dfenv.DfFault> [fs]
+    todo("datafile-nv.dfmake.ensure_dir")
+
+// Create this program's directory for a role, and answer the path.
+//
+// The one call a program makes at startup for each directory it will
+// write to.  The path is answered so the caller does not compute it
+// twice.
+//
+// ```novo
+// use dfmake
+// use dfenv
+// use dfapp
+//
+// fn main() [io, fs]
+//     let e = dfenv.capture()
+//     match dfmake.ensure_app_dir(e, dfapp.app("novo"), DfCache, DfModeDefault)
+//         Ok(p)  => println(p)
+//         Err(f) => println(f.message())
+// ```
+pub fn ensure_app_dir(e: dfenv.DfEnv, a: dfapp.DfApp, r: dfplat.DfRole,
+                      m: DfMode) -> Result<Str, dfenv.DfFault> [fs]
+    todo("datafile-nv.dfmake.ensure_app_dir")
+
+// Create this program's directory for each of several roles, and
+// answer the paths in the order asked.
+//
+// Stops at the first failure, naming it; the directories made before
+// it are left in place, because removing them would be undoing
+// something another run may already be using.
+//
+// A role this platform does not carry is SKIPPED rather than refused,
+// and its path is absent from the answer — so a program that asks for
+// config, cache, data and runtime gets three paths on macOS and four
+// on Linux, with no branch of its own.
+//
+// ```novo
+// use dfmake
+// use dfenv
+// use dfapp
+//
+// fn main() [io, fs]
+//     let roles = [DfConfig, DfCache, DfState]
+//     match dfmake.ensure_app_dirs(dfenv.capture(), dfapp.app("novo"), roles, DfModeDefault)
+//         Ok(paths) => println("${paths.len()}")
+//         Err(f)    => println(f.message())
+// ```
+pub fn ensure_app_dirs(e: dfenv.DfEnv, a: dfapp.DfApp, roles: [dfplat.DfRole],
+                       m: DfMode) -> Result<[Str], dfenv.DfFault> [fs]
+    todo("datafile-nv.dfmake.ensure_app_dirs")
+
+// Create the parent directory of a file path, so a write to it can
+// succeed.
+//
+// What a caller holding `dfapp.config_file(...)` wants, and the one
+// line it would otherwise write itself with `path.dirname`.
+//
+// ```novo
+// use dfmake
+// use dfenv
+// use dfapp
+//
+// fn main() [io, fs]
+//     let p = dfapp.config_file(dfenv.capture(), dfapp.app("novo"), "config.toml")
+//     match dfmake.ensure_parent(p, DfModeDefault)
+//         Ok(_)  => println(p)
+//         Err(f) => println(f.message())
+// ```
+pub fn ensure_parent(file_path: Str, m: DfMode) -> Result<Unit, dfenv.DfFault> [fs]
+    todo("datafile-nv.dfmake.ensure_parent")
+
+// True when the path exists and is a directory.
+//
+// ```novo
+// use dfmake
+//
+// fn main() [io, fs]
+//     let there = dfmake.dir_exists("/tmp")
+//     println("${there}")
+// ```
+pub fn dir_exists(path: Str) -> Bool [fs]
+    todo("datafile-nv.dfmake.dir_exists")
+
+// The POSIX mode of an existing directory, or `-1` when it does not
+// exist or the platform will not say.
+//
+// ```novo
+// use dfmake
+//
+// fn main() [io, fs]
+//     println(dfmake.mode_octal(dfmake.dir_mode("/tmp")))
+// ```
+pub fn dir_mode(path: Str) -> Int [fs]
+    todo("datafile-nv.dfmake.dir_mode")
+
+// True when an existing directory grants nothing to the group or to
+// others.
+//
+// The check a credential store makes BEFORE it writes, so that a
+// directory somebody widened between runs is caught on the way in
+// rather than discovered afterwards.
+//
+// `false` when the directory does not exist and `false` on a platform
+// with no modes — a caller asking "is my secret directory private"
+// should be told no when the answer cannot be established.
+//
+// ```novo
+// use dfmake
+//
+// fn main() [io, fs]
+//     let ok = dfmake.dir_is_private("/tmp")
+//     println("${ok}")
+// ```
+pub fn dir_is_private(path: Str) -> Bool [fs]
+    todo("datafile-nv.dfmake.dir_is_private")
+
+// Tighten an existing directory to `0700`.
+//
+// `DfModeUnsupported` on a platform or filesystem that cannot, which
+// is the answer a credential store needs rather than a silent
+// success.
+//
+// ```novo
+// use dfmake
+//
+// fn main() [io, fs]
+//     match dfmake.make_private("/tmp/novo-example")
+//         Ok(_)  => println("private")
+//         Err(f) => println(f.message())
+// ```
+pub fn make_private(path: Str) -> Result<Unit, dfenv.DfFault> [fs]
+    todo("datafile-nv.dfmake.make_private")
+
+// The first path in a list that exists, or `""`.
+//
+// What a caller does with `dfapp.config_file_candidates`: the highest
+// precedence file that is actually there.
+//
+// ```novo
+// use dfmake
+// use dfenv
+// use dfapp
+//
+// fn main() [io, fs]
+//     let c = dfapp.config_file_candidates(dfenv.capture(), dfapp.app("novo"), "config.toml")
+//     println(dfmake.first_existing(c))
+// ```
+pub fn first_existing(paths: [Str]) -> Str [fs]
+    todo("datafile-nv.dfmake.first_existing")
+
+// Every path in a list that exists, in the order given.
+//
+// What a layered configuration reader wants: every file that is
+// there, highest precedence first, and it applies them lowest first.
+//
+// ```novo
+// use dfmake
+// use dfenv
+// use dfapp
+//
+// fn main() [io, fs]
+//     let c = dfapp.config_file_candidates(dfenv.capture(), dfapp.app("novo"), "config.toml")
+//     println("${dfmake.existing(c).len()}")
+// ```
+pub fn existing(paths: [Str]) -> [Str] [fs]
+    todo("datafile-nv.dfmake.existing")

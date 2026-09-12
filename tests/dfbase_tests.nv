@@ -1,0 +1,221 @@
+// dfbase_tests.nv — the whole platform table, exercised from a
+// hand-built environment.
+//
+// RED ON PURPOSE: every body under `src/` is a `todo()`, so every
+// assertion here reaches `not implemented: datafile-nv.<module>.<fn>`.
+//
+// THIS FILE IS THE ARGUMENT FOR THE DESIGN.  Every assertion below
+// names a platform the machine running it is not, and gets a
+// definite answer.  A directories library that read `env.get` inside
+// its accessors could not have this file at all: its macOS column
+// would be checked on the day somebody had a Mac, and its Windows
+// column never.
+
+use std.test
+use dfenv
+use dfbase
+use dfplat
+
+@test
+fn test_the_linux_defaults() [io]
+    let e = dfenv.bare(DfLinux, "/home/ada")
+
+    test.case("config")
+    test.assert(dfbase.config_dir(e) == "/home/ada/.config")
+
+    test.case("cache")
+    test.assert(dfbase.cache_dir(e) == "/home/ada/.cache")
+
+    test.case("data")
+    test.assert(dfbase.data_dir(e) == "/home/ada/.local/share")
+
+    test.case("state")
+    test.assert(dfbase.state_dir(e) == "/home/ada/.local/state")
+
+    test.case("an executable")
+    test.assert(dfbase.executable_dir(e) == "/home/ada/.local/bin")
+
+    test.case("config-local is the same directory as config on Linux")
+    test.assert(dfbase.config_local_dir(e) == dfbase.config_dir(e))
+
+    test.case("a log goes in the state directory, not the cache")
+    test.assert(dfbase.log_dir(e) == "/home/ada/.local/state")
+
+@test
+fn test_the_runtime_directory_has_no_invented_fallback() [io]
+    // /tmp is world-writable.  A library that fell back to it would
+    // put a program's socket somewhere another user can replace it.
+    let e = dfenv.bare(DfLinux, "/home/ada")
+
+    test.case("unset means there is none")
+    test.assert(dfbase.runtime_dir(e) == "")
+
+    test.case("and the reason is a role with no default, not a missing home")
+    test.assert(dfplat.source_name(dfbase.source_of(e, DfRuntime)) == "no-default")
+
+    test.case("set, it is honoured")
+    let with_rt = dfenv.with_variable(e, "XDG_RUNTIME_DIR", "/run/user/1000")
+    test.assert(dfbase.runtime_dir(with_rt) == "/run/user/1000")
+
+@test
+fn test_the_macos_defaults() [io]
+    let e = dfenv.bare(DfMacos, "/Users/ada")
+
+    test.case("config is Application Support")
+    test.assert(dfbase.config_dir(e) == "/Users/ada/Library/Application Support")
+
+    test.case("preferences is somewhere else, and a plist belongs there")
+    test.assert(dfbase.preference_dir(e) == "/Users/ada/Library/Preferences")
+
+    test.case("cache")
+    test.assert(dfbase.cache_dir(e) == "/Users/ada/Library/Caches")
+
+    test.case("logs have a directory of their own")
+    test.assert(dfbase.log_dir(e) == "/Users/ada/Library/Logs")
+
+    test.case("no runtime directory at all")
+    test.assert(dfbase.runtime_dir(e) == "")
+
+    test.case("and it is absent rather than unset")
+    test.assert(dfplat.source_name(dfbase.source_of(e, DfRuntime)) == "role-absent")
+
+    test.case("XDG_CONFIG_HOME is IGNORED on macOS — the platform has no such rule")
+    let with_xdg = dfenv.with_variable(e, "XDG_CONFIG_HOME", "/tmp/xdg")
+    test.assert(dfbase.config_dir(with_xdg) == "/Users/ada/Library/Application Support")
+
+@test
+fn test_the_windows_defaults() [io]
+    let e = dfenv.bare(DfWindows, "C:/Users/ada")
+
+    test.case("config falls back under the profile, with backslashes")
+    test.assert(dfbase.config_dir(e) == "C:\\Users\\ada\\AppData\\Roaming")
+
+    test.case("config-local is a DIFFERENT directory here")
+    test.assert(dfbase.config_local_dir(e) == "C:\\Users\\ada\\AppData\\Local")
+
+    test.case("the cache is local — a roaming cache is copied over the network")
+    test.assert(dfbase.cache_dir(e) == "C:\\Users\\ada\\AppData\\Local")
+
+    test.case("APPDATA wins when it is set")
+    let with_appdata = dfenv.with_variable(e, "APPDATA", "D:/Profiles/ada/Roaming")
+    test.assert(dfbase.config_dir(with_appdata) == "D:\\Profiles\\ada\\Roaming")
+
+@test
+fn test_an_override_wins_and_says_so() [io]
+    let e = dfenv.of(DfLinux, "/home/ada", [("XDG_CACHE_HOME", "/fast/cache")])
+
+    test.case("the value is used")
+    test.assert(dfbase.cache_dir(e) == "/fast/cache")
+
+    test.case("the source names the variable")
+    test.assert(dfplat.source_variable(dfbase.source_of(e, DfCache)) == "XDG_CACHE_HOME")
+
+    test.case("a role with no override set still reports a default")
+    test.assert(dfplat.source_name(dfbase.source_of(e, DfConfig)) == "default")
+
+@test
+fn test_a_relative_override_is_rejected_by_name() [io]
+    // The specification's own rule, and the one almost nothing
+    // implements.  XDG_CONFIG_HOME=.config looks right in a shell
+    // profile and silently follows the working directory.
+    let e = dfenv.of(DfLinux, "/home/ada", [("XDG_CONFIG_HOME", ".config")])
+
+    test.case("the default is used instead")
+    test.assert(dfbase.config_dir(e) == "/home/ada/.config")
+
+    test.case("and the rejection is reported rather than hidden")
+    test.assert(dfplat.source_name(dfbase.source_of(e, DfConfig)) == "override-rejected")
+
+    test.case("the variable is named, so a person can be told which one to fix")
+    test.assert(dfplat.source_variable(dfbase.source_of(e, DfConfig)) == "XDG_CONFIG_HOME")
+
+@test
+fn test_an_empty_override_is_unset() [io]
+    // The specification: a variable set to the empty string is
+    // treated as unset.
+    let e = dfenv.of(DfLinux, "/home/ada", [("XDG_DATA_HOME", "")])
+
+    test.case("is_set is false")
+    test.assert(dfenv.is_set(e, "XDG_DATA_HOME") == false)
+
+    test.case("and the default is used")
+    test.assert(dfbase.data_dir(e) == "/home/ada/.local/share")
+
+@test
+fn test_no_home_answers_empty_rather_than_a_relative_path() [io]
+    // The defect this prevents: a service account with HOME unset
+    // writing its configuration into whatever directory it was
+    // started in.
+    let e = dfenv.bare(DfLinux, "")
+
+    test.case("config")
+    test.assert(dfbase.config_dir(e) == "")
+
+    test.case("cache")
+    test.assert(dfbase.cache_dir(e) == "")
+
+    test.case("the reason is named")
+    test.assert(dfplat.source_name(dfbase.source_of(e, DfConfig)) == "no-home")
+
+    test.case("has_base_dir agrees")
+    test.assert(dfbase.has_base_dir(e, DfConfig) == false)
+
+    test.case("but an override still works with no home at all")
+    let with_cfg = dfenv.with_variable(e, "XDG_CONFIG_HOME", "/etc/myservice")
+    test.assert(dfbase.config_dir(with_cfg) == "/etc/myservice")
+
+@test
+fn test_the_site_directories_are_a_list_in_precedence_order() [io]
+    let e = dfenv.bare(DfLinux, "/home/ada")
+
+    test.case("the XDG default for config is one entry")
+    test.assert(dfbase.site_config_dirs(e).len() == 1)
+    test.assert(dfbase.site_config_dirs(e)[0] == "/etc/xdg")
+
+    test.case("the XDG default for data is two, in the specification's order")
+    test.assert(dfbase.site_data_dirs(e).len() == 2)
+    test.assert(dfbase.site_data_dirs(e)[0] == "/usr/local/share")
+    test.assert(dfbase.site_data_dirs(e)[1] == "/usr/share")
+
+    test.case("a colon-separated override is split, and every entry is kept")
+    let many = dfenv.with_variable(e, "XDG_CONFIG_DIRS", "/opt/site/etc:/etc/xdg")
+    test.assert(dfbase.site_config_dirs(many).len() == 2)
+    test.assert(dfbase.site_config_dirs(many)[0] == "/opt/site/etc")
+
+@test
+fn test_the_search_path_is_the_user_then_the_site() [io]
+    let e = dfenv.bare(DfLinux, "/home/ada")
+
+    test.case("the user's directory comes first")
+    test.assert(dfbase.config_search_path(e)[0] == "/home/ada/.config")
+
+    test.case("and the site's after it")
+    test.assert(dfbase.config_search_path(e)[1] == "/etc/xdg")
+
+@test
+fn test_the_layout_lists_every_role_including_the_absent_ones() [io]
+    // Rows that line up between platforms are what make a printed
+    // layout comparable.
+    test.case("Linux")
+    test.assert(dfbase.layout(dfenv.bare(DfLinux, "/home/ada")).len() == 10)
+
+    test.case("macOS has the same number of rows, some of them empty")
+    test.assert(dfbase.layout(dfenv.bare(DfMacos, "/Users/ada")).len() == 10)
+
+    test.case("Windows too")
+    test.assert(dfbase.layout(dfenv.bare(DfWindows, "C:/Users/ada")).len() == 10)
+
+@test
+fn test_the_snapshot_is_a_value_and_changing_it_answers_a_new_one() [io]
+    let e = dfenv.bare(DfLinux, "/home/ada")
+    let moved = dfenv.with_home(e, "/var/lib/service")
+
+    test.case("the new value sees the new home")
+    test.assert(dfbase.config_dir(moved) == "/var/lib/service/.config")
+
+    test.case("and the old one is unchanged")
+    test.assert(dfbase.config_dir(e) == "/home/ada/.config")
+
+    test.case("the platform can be changed the same way, for a cross-platform report")
+    let swapped = dfenv.with_platform(e, DfMacos)
+    test.assert(dfplat.platform_name(dfenv.platform(swapped)) == "macos")

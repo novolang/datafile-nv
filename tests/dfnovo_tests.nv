@@ -1,0 +1,165 @@
+// dfnovo_tests.nv — the toolchain's own layout, and the mode
+// arithmetic.
+//
+// RED ON PURPOSE: every body under `src/` is a `todo()`, so every
+// assertion here reaches `not implemented: datafile-nv.<module>.<fn>`.
+//
+// The layout assertions are the package's dogfood: if this table is
+// wrong, `novo`'s own cache cleaner cleans the wrong directory.
+
+use std.test
+use std.str
+use dfenv
+use dfnovo
+use dfmake
+
+@test
+fn test_the_root_is_novo_home_or_a_dot_directory() [io]
+    test.case("the default is one directory under the home directory")
+    let bare = dfenv.bare(DfLinux, "/home/ada")
+    test.assert(dfnovo.root(dfnovo.layout(bare)) == "/home/ada/.novo")
+
+    test.case("NOVO_HOME wins")
+    let moved = dfenv.with_variable(bare, "NOVO_HOME", "/opt/novo")
+    test.assert(dfnovo.root(dfnovo.layout(moved)) == "/opt/novo")
+
+    test.case("a RELATIVE NOVO_HOME is ignored, the same rule the XDG variables get")
+    let rel = dfenv.with_variable(bare, "NOVO_HOME", "novo")
+    test.assert(dfnovo.root(dfnovo.layout(rel)) == "/home/ada/.novo")
+
+    test.case("no home and no variable is no root, not a relative path")
+    test.assert(dfnovo.root(dfnovo.layout(dfenv.bare(DfLinux, ""))) == "")
+
+@test
+fn test_the_tree_under_the_root() [io]
+    let l = dfnovo.layout(dfenv.bare(DfLinux, "/home/ada"))
+
+    test.case("bin, which is what goes on PATH")
+    test.assert(dfnovo.bin(l) == "/home/ada/.novo/bin")
+
+    test.case("current, the link the installer repoints")
+    test.assert(dfnovo.current(l) == "/home/ada/.novo/current")
+
+    test.case("versions")
+    test.assert(dfnovo.versions(l) == "/home/ada/.novo/versions")
+
+    test.case("one version")
+    test.assert(dfnovo.version_dir(l, "0.8.9") == "/home/ada/.novo/versions/0.8.9")
+
+    test.case("lib, the runtime sources an installed compiler links against")
+    test.assert(dfnovo.lib(l) == "/home/ada/.novo/lib")
+
+    test.case("the cache")
+    test.assert(dfnovo.cache(l) == "/home/ada/.novo/cache")
+
+    test.case("the runtime object cache, the one documented as safe to delete")
+    test.assert(dfnovo.runtime_object_cache(l) == "/home/ada/.novo/cache/rt-obj")
+
+@test
+fn test_the_registry_cache_is_keyed_by_host_then_name_then_version() [io]
+    let l = dfnovo.layout(dfenv.bare(DfLinux, "/home/ada"))
+
+    test.case("the host is a path component, because two registries are two caches")
+    test.assert(dfnovo.registry_cache(l, "registry.novo-lang.org")
+                == "/home/ada/.novo/cache/registry/registry.novo-lang.org")
+
+    test.case("and a package's sources sit under its name and version")
+    test.assert(dfnovo.package_dir(l, "registry.novo-lang.org", "tar-nv", "0.0.2")
+                == "/home/ada/.novo/cache/registry/registry.novo-lang.org/tar-nv/0.0.2")
+
+@test
+fn test_a_version_string_cannot_name_a_directory_outside_versions() [io]
+    // A version string can come out of a network response.
+    let l = dfnovo.layout(dfenv.bare(DfLinux, "/home/ada"))
+
+    test.case("a traversal is sanitised away")
+    test.assert(str.contains(dfnovo.version_dir(l, "../../.."), "..") == false)
+
+    test.case("and the answer stays under versions")
+    let v = dfnovo.version_dir(l, "../../..")
+    test.assert(str.starts_with(v, "/home/ada/.novo/versions"))
+
+@test
+fn test_the_root_being_empty_propagates_through_every_accessor() [io]
+    let l = dfnovo.layout(dfenv.bare(DfLinux, ""))
+
+    test.case("bin")
+    test.assert(dfnovo.bin(l) == "")
+
+    test.case("the cache")
+    test.assert(dfnovo.cache(l) == "")
+
+    test.case("a package directory")
+    test.assert(dfnovo.package_dir(l, "registry.novo-lang.org", "tar-nv", "0.0.2") == "")
+
+@test
+fn test_the_variable_is_named_once() [io]
+    test.case("so a message and the code that reads it cannot disagree")
+    test.assert(dfnovo.home_variable() == "NOVO_HOME")
+
+@test
+fn test_what_the_layout_would_be_if_it_followed_the_conventions() [io]
+    // The comparison a person asking "why is this not in ~/.cache"
+    // wants, and the table the toolchain would move to.
+    let e = dfenv.bare(DfLinux, "/home/ada")
+
+    test.case("the cache would be under the XDG cache directory")
+    test.assert(dfnovo.xdg_would_be(e, "cache") == "/home/ada/.cache/novo")
+
+    test.case("the versions would be data, not cache")
+    test.assert(dfnovo.xdg_would_be(e, "versions") == "/home/ada/.local/share/novo/versions")
+
+    test.case("a part with no counterpart answers empty")
+    test.assert(dfnovo.xdg_would_be(e, "current") == "")
+
+@test
+fn test_a_mode_can_be_written_the_way_a_person_writes_one() [io]
+    // novo-lang has no octal integer literal — `0x` and `0b` are
+    // spelled and `0o` is a parse error — so a POSIX mode reaches this
+    // package as text or as a binary literal grouped three bits at a
+    // time.  Both forms appear below, and they must agree.
+    test.case("0700")
+    test.assert(dfmake.octal("0700") == 0b111_000_000)
+
+    test.case("a leading zero is optional")
+    test.assert(dfmake.octal("700") == 0b111_000_000)
+
+    test.case("0755")
+    test.assert(dfmake.octal("0755") == 0b111_101_101)
+
+    test.case("a digit outside the octal range is refused")
+    test.assert(dfmake.octal("0798") == -1)
+
+    test.case("and so is anything that is not a mode")
+    test.assert(dfmake.octal("rwx") == -1)
+
+@test
+fn test_the_mode_arithmetic_is_pure() [io]
+    test.case("private is 0700")
+    test.assert(dfmake.mode_bits(DfModePrivate) == 0b111_000_000)
+
+    test.case("default asks for no mode at all, and says so with -1")
+    test.assert(dfmake.mode_bits(DfModeDefault) == -1)
+
+    test.case("explicit is what the caller said")
+    test.assert(dfmake.mode_bits(DfModeExplicit(0b111_101_000)) == 0b111_101_000)
+
+    test.case("a mode prints in octal, because decimal cannot be checked against ls")
+    test.assert(dfmake.mode_octal(0b111_000_000) == "0700")
+
+@test
+fn test_private_means_nothing_for_group_or_other() [io]
+    test.case("0700 is private")
+    test.assert(dfmake.mode_is_private(0b111_000_000))
+
+    test.case("0750 is not — the group can enter")
+    test.assert(dfmake.mode_is_private(0b111_101_000) == false)
+
+    test.case("0701 is not — anyone can execute into it")
+    test.assert(dfmake.mode_is_private(0b111_000_001) == false)
+
+    test.case("0755, the mode a default umask actually produces, is not")
+    test.assert(dfmake.mode_is_private(0b111_101_101) == false)
+
+    test.case("0600 is private too; a directory with no execute bit is useless but not shared")
+    test.assert(dfmake.mode_is_private(0b110_000_000))

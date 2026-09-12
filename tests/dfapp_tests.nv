@@ -1,0 +1,169 @@
+// dfapp_tests.nv — the project path, which is the fact `directories`
+// exists to encode and the one a naive port gets wrong.
+//
+// RED ON PURPOSE: every body under `src/` is a `todo()`, so every
+// assertion here reaches `not implemented: datafile-nv.<module>.<fn>`.
+
+use std.test
+use std.str
+use dfenv
+use dfapp
+
+@test
+fn test_the_project_path_differs_on_every_platform() [io]
+    let a = dfapp.qualified("org", "novo-lang", "novo")
+
+    test.case("Linux uses the application name alone")
+    test.assert(dfapp.project_path(DfLinux, a) == "novo")
+
+    test.case("macOS uses reverse DNS, qualifier first")
+    test.assert(dfapp.project_path(DfMacos, a) == "org.novo-lang.novo")
+
+    test.case("Windows nests the application under the organization")
+    test.assert(dfapp.project_path(DfWindows, a) == "novo-lang\\novo")
+
+@test
+fn test_a_program_with_no_vendor_claims_none() [io]
+    let a = dfapp.app("novo")
+
+    test.case("Linux is unchanged")
+    test.assert(dfapp.project_path(DfLinux, a) == "novo")
+
+    test.case("macOS falls back to the bare name rather than inventing a qualifier")
+    test.assert(dfapp.project_path(DfMacos, a) == "novo")
+
+    test.case("Windows falls back to the bare name rather than a stray separator")
+    test.assert(dfapp.project_path(DfWindows, a) == "novo")
+
+@test
+fn test_a_version_becomes_a_further_component() [io]
+    let a = dfapp.versioned(dfapp.app("novo"), "2")
+
+    test.case("Linux")
+    test.assert(dfapp.project_path(DfLinux, a) == "novo/2")
+
+    test.case("and the directory follows")
+    let e = dfenv.bare(DfLinux, "/home/ada")
+    test.assert(dfapp.cache_dir(e, a) == "/home/ada/.cache/novo/2")
+
+    test.case("an unversioned program has no such component")
+    test.assert(dfapp.cache_dir(e, dfapp.app("novo")) == "/home/ada/.cache/novo")
+
+@test
+fn test_the_directories_are_the_base_ones_with_the_project_path_on() [io]
+    let e = dfenv.bare(DfLinux, "/home/ada")
+    let a = dfapp.app("novo")
+
+    test.case("config")
+    test.assert(dfapp.config_dir(e, a) == "/home/ada/.config/novo")
+
+    test.case("cache")
+    test.assert(dfapp.cache_dir(e, a) == "/home/ada/.cache/novo")
+
+    test.case("data")
+    test.assert(dfapp.data_dir(e, a) == "/home/ada/.local/share/novo")
+
+    test.case("state")
+    test.assert(dfapp.state_dir(e, a) == "/home/ada/.local/state/novo")
+
+@test
+fn test_a_named_file_lands_inside_the_programs_own_directory() [io]
+    let e = dfenv.bare(DfLinux, "/home/ada")
+    let a = dfapp.app("novo")
+
+    test.case("a configuration file")
+    test.assert(dfapp.config_file(e, a, "config.toml") == "/home/ada/.config/novo/config.toml")
+
+    test.case("a data file")
+    test.assert(dfapp.data_file(e, a, "index.db") == "/home/ada/.local/share/novo/index.db")
+
+@test
+fn test_an_empty_base_directory_propagates_rather_than_becoming_relative() [io]
+    // The defect: a program with no home writing its configuration
+    // into the current working directory.
+    let e = dfenv.bare(DfLinux, "")
+    let a = dfapp.app("novo")
+
+    test.case("the directory is empty, not 'novo'")
+    test.assert(dfapp.config_dir(e, a) == "")
+
+    test.case("and so is the file, not 'novo/config.toml'")
+    test.assert(dfapp.config_file(e, a, "config.toml") == "")
+
+@test
+fn test_a_role_the_platform_lacks_stays_empty_here_too() [io]
+    let e = dfenv.bare(DfMacos, "/Users/ada")
+
+    test.case("no runtime directory means no runtime directory for the program either")
+    test.assert(dfapp.runtime_dir(e, dfapp.app("novo")) == "")
+
+@test
+fn test_a_name_that_is_not_a_component_is_refused_by_check() [io]
+    test.case("a traversal")
+    test.assert(dfapp.is_component("../etc") == false)
+
+    test.case("a separator anywhere")
+    test.assert(dfapp.is_component("novo/lang") == false)
+
+    test.case("a backslash too, because Windows joins with one")
+    test.assert(dfapp.is_component("novo\\lang") == false)
+
+    test.case("the two dot names")
+    test.assert(dfapp.is_component(".") == false)
+    test.assert(dfapp.is_component("..") == false)
+
+    test.case("empty")
+    test.assert(dfapp.is_component("") == false)
+
+    test.case("an ordinary name")
+    test.assert(dfapp.is_component("novo-lang"))
+
+    test.case("a leading dot is fine — plenty of programs are named that way")
+    test.assert(dfapp.is_component(".novo"))
+
+@test
+fn test_check_names_the_first_bad_part() [io]
+    test.case("a usable triple answers None")
+    test.assert(dfapp.check(dfapp.qualified("org", "novo-lang", "novo")) == None)
+
+    test.case("an application with a separator is refused")
+    test.assert(dfapp.check(dfapp.app("novo/lang")) != None)
+
+    test.case("an EMPTY application is refused — there is no program to name")
+    test.assert(dfapp.check(dfapp.app("")) != None)
+
+    test.case("an empty qualifier is NOT refused; plenty of programs have none")
+    test.assert(dfapp.check(dfapp.app("novo")) == None)
+
+@test
+fn test_the_join_sanitises_even_when_check_was_skipped() [io]
+    // Both halves: a library that only checked would be bypassed, one
+    // that only sanitised would be silent.  The failure mode of
+    // skipping `check` must be a strange directory name and never an
+    // escape.
+    let e = dfenv.bare(DfLinux, "/home/ada")
+
+    test.case("a traversal in the application name cannot climb out")
+    let escaped = dfapp.config_dir(e, dfapp.app("../../.ssh"))
+    test.assert(str.contains(escaped, "..") == false)
+
+    test.case("and it stays under the base directory")
+    test.assert(str.starts_with(escaped, "/home/ada/.config"))
+
+    test.case("a traversal in a file name cannot either")
+    let f = dfapp.config_file(e, dfapp.app("novo"), "../../.ssh/id_rsa")
+    test.assert(str.contains(f, "..") == false)
+
+@test
+fn test_the_config_candidates_are_in_precedence_order() [io]
+    let e = dfenv.bare(DfLinux, "/home/ada")
+    let c = dfapp.config_file_candidates(e, dfapp.app("novo"), "config.toml")
+
+    test.case("the user's file is first")
+    test.assert(c[0] == "/home/ada/.config/novo/config.toml")
+
+    test.case("the site's after it")
+    test.assert(c[1] == "/etc/xdg/novo/config.toml")
+
+    test.case("and there are no more than the search path has entries")
+    test.assert(c.len() == dfapp.config_search_path(e, dfapp.app("novo")).len())

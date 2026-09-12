@@ -1,0 +1,204 @@
+// dfplat_tests.nv — the two tables, read directly.
+//
+// RED ON PURPOSE: every body under `src/` is a `todo()`, so every
+// assertion here reaches `not implemented: datafile-nv.<module>.<fn>`.
+// That is the expected result until the bodies land.
+//
+// The tables are asserted CELL BY CELL rather than through the
+// accessors, because that is the level a port can be checked against
+// its reference at: `directories`' own source names `XDG_CONFIG_HOME`
+// and `.config` in one place each, and so does this.
+
+use std.test
+use dfplat
+
+@test
+fn test_the_platform_name_round_trips() [io]
+    test.case("linux")
+    test.assert(dfplat.platform_name(dfplat.platform_of("linux")) == "linux")
+
+    test.case("macos")
+    test.assert(dfplat.platform_name(dfplat.platform_of("macos")) == "macos")
+
+    test.case("windows")
+    test.assert(dfplat.platform_name(dfplat.platform_of("windows")) == "windows")
+
+    test.case("anything else is other, not a panic")
+    test.assert(dfplat.platform_name(dfplat.platform_of("freebsd")) == "other")
+
+    test.case("an empty name is other too")
+    test.assert(dfplat.platform_name(dfplat.platform_of("")) == "other")
+
+@test
+fn test_the_xdg_override_table() [io]
+    // The five variables the specification names, and no sixth.
+    test.case("config")
+    test.assert(dfplat.override_variable(DfLinux, DfConfig) == "XDG_CONFIG_HOME")
+
+    test.case("cache")
+    test.assert(dfplat.override_variable(DfLinux, DfCache) == "XDG_CACHE_HOME")
+
+    test.case("data")
+    test.assert(dfplat.override_variable(DfLinux, DfData) == "XDG_DATA_HOME")
+
+    test.case("state")
+    test.assert(dfplat.override_variable(DfLinux, DfState) == "XDG_STATE_HOME")
+
+    test.case("runtime")
+    test.assert(dfplat.override_variable(DfLinux, DfRuntime) == "XDG_RUNTIME_DIR")
+
+    test.case("the log directory has no variable of its own")
+    test.assert(dfplat.override_variable(DfLinux, DfLog) == "XDG_STATE_HOME")
+
+@test
+fn test_the_xdg_default_table() [io]
+    test.case("config")
+    test.assert(dfplat.default_suffix(DfLinux, DfConfig) == ".config")
+
+    test.case("cache")
+    test.assert(dfplat.default_suffix(DfLinux, DfCache) == ".cache")
+
+    test.case("data")
+    test.assert(dfplat.default_suffix(DfLinux, DfData) == ".local/share")
+
+    test.case("state")
+    test.assert(dfplat.default_suffix(DfLinux, DfState) == ".local/state")
+
+    test.case("an executable")
+    test.assert(dfplat.default_suffix(DfLinux, DfExecutable) == ".local/bin")
+
+    test.case("the runtime directory has NO default — the specification gives none")
+    test.assert(dfplat.default_suffix(DfLinux, DfRuntime) == "")
+
+@test
+fn test_the_macos_table() [io]
+    test.case("config is Application Support, not Preferences")
+    test.assert(dfplat.default_suffix(DfMacos, DfConfig) == "Library/Application Support")
+
+    test.case("preferences is a DIFFERENT directory, and that is the point of the role")
+    test.assert(dfplat.default_suffix(DfMacos, DfPreference) == "Library/Preferences")
+
+    test.case("cache")
+    test.assert(dfplat.default_suffix(DfMacos, DfCache) == "Library/Caches")
+
+    test.case("logs have their own directory here")
+    test.assert(dfplat.default_suffix(DfMacos, DfLog) == "Library/Logs")
+
+    test.case("macOS has no per-role environment override")
+    test.assert(dfplat.override_variable(DfMacos, DfConfig) == "")
+
+@test
+fn test_the_windows_table() [io]
+    test.case("config roams")
+    test.assert(dfplat.override_variable(DfWindows, DfConfig) == "APPDATA")
+
+    test.case("config-local does not")
+    test.assert(dfplat.override_variable(DfWindows, DfConfigLocal) == "LOCALAPPDATA")
+
+    test.case("the cache is local, never roaming")
+    test.assert(dfplat.override_variable(DfWindows, DfCache) == "LOCALAPPDATA")
+
+    test.case("the default is relative to the profile")
+    test.assert(dfplat.default_suffix(DfWindows, DfConfig) == "AppData/Roaming")
+
+    test.case("and the local one")
+    test.assert(dfplat.default_suffix(DfWindows, DfConfigLocal) == "AppData/Local")
+
+@test
+fn test_the_roles_a_platform_does_not_carry() [io]
+    // The failure this prevents: inventing %TEMP% for the runtime role
+    // on Windows, and putting a socket somewhere nothing cleans up.
+    test.case("no runtime directory on Windows")
+    test.assert(dfplat.role_is_absent(DfWindows, DfRuntime))
+
+    test.case("no runtime directory on macOS")
+    test.assert(dfplat.role_is_absent(DfMacos, DfRuntime))
+
+    test.case("no convention for a user executable on Windows")
+    test.assert(dfplat.role_is_absent(DfWindows, DfExecutable))
+
+    test.case("Linux carries the runtime role")
+    test.assert(dfplat.role_is_absent(DfLinux, DfRuntime) == false)
+
+    test.case("every platform carries config")
+    test.assert(dfplat.role_is_absent(DfWindows, DfConfig) == false)
+
+@test
+fn test_an_unknown_platform_reads_the_xdg_column() [io]
+    // A BSD is not a reason to refuse to start.
+    test.case("config")
+    test.assert(dfplat.default_suffix(DfOther, DfConfig) == ".config")
+
+    test.case("cache")
+    test.assert(dfplat.default_suffix(DfOther, DfCache) == ".cache")
+
+    test.case("and the overrides too")
+    test.assert(dfplat.override_variable(DfOther, DfData) == "XDG_DATA_HOME")
+
+@test
+fn test_join_produces_exactly_one_separator() [io]
+    test.case("the ordinary case")
+    test.assert(dfplat.join(DfLinux, "/home/ada", ".config") == "/home/ada/.config")
+
+    test.case("a trailing separator on the left is not doubled")
+    test.assert(dfplat.join(DfLinux, "/home/ada/", ".config") == "/home/ada/.config")
+
+    test.case("an empty left answers the right — NOT a leading separator")
+    test.assert(dfplat.join(DfLinux, "", ".config") == ".config")
+
+    test.case("an empty right answers the left")
+    test.assert(dfplat.join(DfLinux, "/home/ada", "") == "/home/ada")
+
+    test.case("both empty")
+    test.assert(dfplat.join(DfLinux, "", "") == "")
+
+@test
+fn test_join_writes_the_platforms_own_separator() [io]
+    test.case("Windows joins with a backslash")
+    test.assert(dfplat.join(DfWindows, "C:/Users/ada", "AppData") == "C:\\Users\\ada\\AppData")
+
+    test.case("and converts the table's forward slashes on the way")
+    test.assert(dfplat.to_platform(DfWindows, "AppData/Roaming") == "AppData\\Roaming")
+
+    test.case("Linux leaves them alone")
+    test.assert(dfplat.to_platform(DfLinux, "Library/Caches") == "Library/Caches")
+
+@test
+fn test_absoluteness_is_the_platforms_rule() [io]
+    // The XDG rule that a relative override must be ignored is written
+    // in this predicate, so a wrong answer here honours a variable
+    // pointing at another drive's current directory.
+    test.case("a Unix absolute path")
+    test.assert(dfplat.is_absolute(DfLinux, "/srv/data"))
+
+    test.case("a relative path is not")
+    test.assert(dfplat.is_absolute(DfLinux, ".config") == false)
+
+    test.case("a drive letter is absolute on Windows")
+    test.assert(dfplat.is_absolute(DfWindows, "C:\\Users"))
+
+    test.case("with a forward slash too")
+    test.assert(dfplat.is_absolute(DfWindows, "C:/Users"))
+
+    test.case("a UNC share is absolute on Windows")
+    test.assert(dfplat.is_absolute(DfWindows, "\\\\server\\share"))
+
+    test.case("a leading slash alone is NOT absolute on Windows — it names no drive")
+    test.assert(dfplat.is_absolute(DfWindows, "/srv/data") == false)
+
+    test.case("an empty path is never absolute")
+    test.assert(dfplat.is_absolute(DfLinux, "") == false)
+
+@test
+fn test_every_role_has_a_name_and_the_list_is_stable() [io]
+    test.case("the roles list carries all ten")
+    test.assert(dfplat.roles().len() == 10)
+
+    test.case("and it opens with config, because a printed layout should")
+    test.assert(dfplat.role_name(dfplat.roles()[0]) == "config")
+
+    test.case("names are lower case and hyphen-free where they are one word")
+    test.assert(dfplat.role_name(DfCache) == "cache")
+
+    test.case("and hyphenated where they are two")
+    test.assert(dfplat.role_name(DfDataLocal) == "data-local")

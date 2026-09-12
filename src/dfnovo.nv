@@ -1,0 +1,263 @@
+// dfnovo.nv — the worked example: the novo toolchain's own layout.
+//
+// Every body here is a `todo()`; the signatures are the design.
+//
+// THE TOOLCHAIN DOES NOT FOLLOW XDG, AND THAT IS THE POINT OF PUTTING
+// IT HERE.  `novo` keeps everything under one directory — `$NOVO_HOME`,
+// or `~/.novo` — with the installed versions, the current symbolic
+// link, the binaries, the package cache and the compiled-runtime cache
+// all inside it.  Splitting that across `~/.config`, `~/.cache` and
+// `~/.local/share` would mean a person could not move, copy or delete
+// an installation by moving, copying or deleting one directory, and
+// the installer's relative symbolic links would stop being relative.
+//
+// So this module is the honest example a directories library ought to
+// carry: one that shows the rule AND shows a program that does not
+// follow it, with the reason written down.  A package whose README
+// only shows its own conventions being obeyed teaches a reader to
+// obey them where they do not fit.
+//
+// EVERY FUNCTION HERE IS `[]`.  `novo_layout` takes the `DfEnv`, reads
+// `NOVO_HOME` out of the snapshot, falls back to `<home>/.novo`, and
+// everything else is a join.  So `novo`'s own tooling — a cache
+// cleaner, a packager listing installed files, an uninstaller — can
+// compute the whole tree with no effects and print it.
+//
+// THE PARTS THAT ARE STILL XDG.  Nothing the toolchain writes is,
+// today.  `novo_xdg_would_be` answers where each part WOULD live under
+// the platform conventions, because that is the comparison a person
+// asking "why is this not in ~/.cache" wants, and because the day the
+// toolchain moves, this is the table it moves to.
+
+use dfenv
+
+// One novo installation's root, and everything under it.
+//
+// A struct of one field rather than a bare `Str` so that a function
+// taking a layout cannot be handed some other directory by accident,
+// and so that a second field — a platform, a version — can arrive
+// without changing eleven signatures.
+pub struct DfNovoLayout
+    // The installation root: `$NOVO_HOME`, or `<home>/.novo`.
+    // Absolute, no trailing separator.
+    root: Str
+
+// The layout this environment describes.
+//
+// `$NOVO_HOME` when it is set and absolute; `<home>/.novo` otherwise;
+// `""` for the root when there is neither, which every accessor
+// propagates rather than answering a relative path.
+//
+// ```novo
+// use dfnovo
+// use dfenv
+//
+// fn main() [io]
+//     println(dfnovo.root(dfnovo.layout(dfenv.capture())))
+// ```
+pub fn layout(e: dfenv.DfEnv) -> DfNovoLayout []
+    todo("datafile-nv.dfnovo.layout")
+
+// A layout rooted at a path the caller names, for a tool operating on
+// an installation that is not its own.
+//
+// ```novo
+// use dfnovo
+//
+// fn main() [io]
+//     println(dfnovo.bin(dfnovo.layout_at("/opt/novo")))
+// ```
+pub fn layout_at(root: Str) -> DfNovoLayout []
+    todo("datafile-nv.dfnovo.layout_at")
+
+// The name of the variable that overrides the root: `NOVO_HOME`.
+//
+// Named as a function rather than written into four messages, so a
+// program printing "set X to move your installation" cannot spell it
+// differently from the code that reads it.
+//
+// ```novo
+// use dfnovo
+//
+// fn main() [io]
+//     println(dfnovo.home_variable())
+// ```
+pub fn home_variable() -> Str []
+    todo("datafile-nv.dfnovo.home_variable")
+
+// The installation root.
+//
+// ```novo
+// use dfnovo
+// use dfenv
+//
+// fn main() [io]
+//     println(dfnovo.root(dfnovo.layout(dfenv.capture())))
+// ```
+pub fn root(l: DfNovoLayout) -> Str []
+    todo("datafile-nv.dfnovo.root")
+
+// `<root>/bin` — the directory that goes on `PATH`, and a symbolic
+// link to `current/bin`.
+//
+// ```novo
+// use dfnovo
+// use dfenv
+//
+// fn main() [io]
+//     println(dfnovo.bin(dfnovo.layout(dfenv.capture())))
+// ```
+pub fn bin(l: DfNovoLayout) -> Str []
+    todo("datafile-nv.dfnovo.bin")
+
+// `<root>/current` — a symbolic link to the selected version.
+//
+// ```novo
+// use dfnovo
+// use dfenv
+//
+// fn main() [io]
+//     println(dfnovo.current(dfnovo.layout(dfenv.capture())))
+// ```
+pub fn current(l: DfNovoLayout) -> Str []
+    todo("datafile-nv.dfnovo.current")
+
+// `<root>/versions` — one unpacked release per subdirectory.
+//
+// ```novo
+// use dfnovo
+// use dfenv
+//
+// fn main() [io]
+//     println(dfnovo.versions(dfnovo.layout(dfenv.capture())))
+// ```
+pub fn versions(l: DfNovoLayout) -> Str []
+    todo("datafile-nv.dfnovo.versions")
+
+// `<root>/versions/<version>` — one unpacked release.
+//
+// The version is sanitised as a single path component, so a version
+// string read from a network response cannot name a directory outside
+// `versions`.
+//
+// ```novo
+// use dfnovo
+// use dfenv
+//
+// fn main() [io]
+//     println(dfnovo.version_dir(dfnovo.layout(dfenv.capture()), "0.8.9"))
+// ```
+pub fn version_dir(l: DfNovoLayout, version: Str) -> Str []
+    todo("datafile-nv.dfnovo.version_dir")
+
+// `<root>/lib` — the runtime sources an installed compiler links
+// against.
+//
+// ```novo
+// use dfnovo
+// use dfenv
+//
+// fn main() [io]
+//     println(dfnovo.lib(dfnovo.layout(dfenv.capture())))
+// ```
+pub fn lib(l: DfNovoLayout) -> Str []
+    todo("datafile-nv.dfnovo.lib")
+
+// `<root>/cache` — everything the toolchain can recompute.
+//
+// ```novo
+// use dfnovo
+// use dfenv
+//
+// fn main() [io]
+//     println(dfnovo.cache(dfnovo.layout(dfenv.capture())))
+// ```
+pub fn cache(l: DfNovoLayout) -> Str []
+    todo("datafile-nv.dfnovo.cache")
+
+// `<root>/cache/registry/<host>` — the fetched sources of every
+// package this machine has built against.
+//
+// The host is a component of the path on purpose: a machine that
+// resolves from two registries keeps two caches, and a package's
+// identity is its name on a registry rather than its name.
+//
+// ```novo
+// use dfnovo
+// use dfenv
+//
+// fn main() [io]
+//     let l = dfnovo.layout(dfenv.capture())
+//     println(dfnovo.registry_cache(l, "registry.novo-lang.org"))
+// ```
+pub fn registry_cache(l: DfNovoLayout, host: Str) -> Str []
+    todo("datafile-nv.dfnovo.registry_cache")
+
+// `<root>/cache/registry/<host>/<name>/<version>` — one package's
+// unpacked sources.
+//
+// What an interface lane reads when it checks a neighbour's public
+// surface, and what the embedded probe builds a dependency from.
+//
+// ```novo
+// use dfnovo
+// use dfenv
+//
+// fn main() [io]
+//     let l = dfnovo.layout(dfenv.capture())
+//     println(dfnovo.package_dir(l, "registry.novo-lang.org", "tar-nv", "0.0.2"))
+// ```
+pub fn package_dir(l: DfNovoLayout, host: Str, name: Str, version: Str) -> Str []
+    todo("datafile-nv.dfnovo.package_dir")
+
+// `<root>/cache/rt-obj` — the compiled runtime objects, keyed by
+// toolchain.
+//
+// Machine-global and safe to delete: the one directory whose removal
+// is documented as a repair when a link fails with an undefined
+// symbol.
+//
+// ```novo
+// use dfnovo
+// use dfenv
+//
+// fn main() [io]
+//     println(dfnovo.runtime_object_cache(dfnovo.layout(dfenv.capture())))
+// ```
+pub fn runtime_object_cache(l: DfNovoLayout) -> Str []
+    todo("datafile-nv.dfnovo.runtime_object_cache")
+
+// Every directory in the layout, name paired with path, in a stable
+// order.
+//
+// What `novo --paths` would print, and what an uninstaller enumerates.
+//
+// ```novo
+// use dfnovo
+// use dfenv
+//
+// fn main() [io]
+//     println("${dfnovo.tree(dfnovo.layout(dfenv.capture())).len()}")
+// ```
+pub fn tree(l: DfNovoLayout) -> [(Str, Str)] []
+    todo("datafile-nv.dfnovo.tree")
+
+// Where a part of the layout WOULD live under the platform
+// conventions, for the comparison a person asks for.
+//
+// `cache` would be `<cache>/novo`, `versions` would be
+// `<data>/novo/versions`, and so on.  `""` for a part with no
+// platform counterpart.
+//
+// The toolchain does not use these paths; the function exists so that
+// the decision not to is visible and checkable rather than implicit.
+//
+// ```novo
+// use dfnovo
+// use dfenv
+//
+// fn main() [io]
+//     println(dfnovo.xdg_would_be(dfenv.capture(), "cache"))
+// ```
+pub fn xdg_would_be(e: dfenv.DfEnv, part: Str) -> Str []
+    todo("datafile-nv.dfnovo.xdg_would_be")

@@ -1,0 +1,232 @@
+// dfmake_tests.nv — the disk half, and the accessors the other files
+// did not reach.
+//
+// RED ON PURPOSE: every body under `src/` is a `todo()`, so every
+// assertion here reaches `not implemented: datafile-nv.<module>.<fn>`.
+//
+// THE DISK IS TOUCHED UNDER ONE DIRECTORY AND NOWHERE ELSE.  Every
+// `[fs]` assertion below works under `/tmp/novo-datafile-nv-tests`,
+// which is created by the assertions themselves and left behind — this
+// package cannot delete, on purpose, and a test that swept up would be
+// asserting a capability the package refuses to have.
+
+use std.test
+use std.str
+use dfenv
+use dfplat
+use dfbase
+use dfapp
+use dfuser
+use dfmake
+use dfnovo
+
+fn scratch_root() -> Str
+    "/tmp/novo-datafile-nv-tests"
+
+@test
+fn test_the_environment_is_read_and_the_reading_is_the_only_io() [io]
+    // `capture` and `capture_for` are the whole `[io]` surface beside
+    // `dfplat.current_platform`.  What is asserted is the SHAPE of what
+    // comes back, because the values are the machine's.
+    let e = dfenv.capture()
+
+    test.case("the snapshot names a platform this package recognises")
+    test.assert(dfplat.platform_name(dfenv.platform(e)) != "")
+
+    test.case("the variable list is the package's whole environmental footprint")
+    test.assert(dfenv.variable_names(dfenv.platform(e)).len() > 0)
+
+    test.case("capture_for answers the platform asked for, not the machine's")
+    let win = dfenv.capture_for(DfWindows)
+    test.assert(dfplat.platform_name(dfenv.platform(win)) == "windows")
+
+    test.case("and current_platform agrees with the snapshot")
+    test.assert(dfplat.platform_name(dfplat.current_platform())
+                == dfplat.platform_name(dfenv.platform(e)))
+
+@test
+fn test_removing_a_variable_answers_a_new_snapshot() [io]
+    let set = dfenv.of(DfLinux, "/home/ada", [("XDG_CACHE_HOME", "/fast")])
+    let unset = dfenv.without_variable(set, "XDG_CACHE_HOME")
+
+    test.case("the variable is gone from the new value")
+    test.assert(dfenv.is_set(unset, "XDG_CACHE_HOME") == false)
+
+    test.case("and the old value still has it")
+    test.assert(dfenv.variable(set, "XDG_CACHE_HOME") == "/fast")
+
+@test
+fn test_override_is_usable_is_the_relative_rule_on_its_own() [io]
+    let abs = dfenv.of(DfLinux, "/home/ada", [("XDG_DATA_HOME", "/srv/data")])
+    let rel = dfenv.of(DfLinux, "/home/ada", [("XDG_DATA_HOME", "share")])
+
+    test.case("an absolute value is usable")
+    test.assert(dfenv.override_is_usable(abs, "XDG_DATA_HOME"))
+
+    test.case("a relative one is not")
+    test.assert(dfenv.override_is_usable(rel, "XDG_DATA_HOME") == false)
+
+    test.case("an unset one is not usable either")
+    test.assert(dfenv.override_is_usable(abs, "XDG_CACHE_HOME") == false)
+
+@test
+fn test_every_fault_says_which_path_or_name_it_is_about() [io]
+    // A "permission denied" with no directory in it costs a person
+    // half an hour.
+    test.case("a bad name is quoted in the message")
+    test.assert(str.contains(dfenv.fault_message(DfNameNotAComponent("../etc")), "../etc"))
+
+    test.case("a failed create names the path")
+    test.assert(str.contains(dfenv.fault_message(DfCreateFailed("/var/lib/app")), "/var/lib/app"))
+
+    test.case("a too-wide mode names both numbers, so the surprising one is visible")
+    let m = dfenv.fault_message(DfModeTooWide("/h/.config/app", 448, 493))
+    test.assert(str.contains(m, "0700"))
+    test.assert(str.contains(m, "0755"))
+
+    test.case("an unsupported mode names the path too")
+    test.assert(str.contains(dfenv.fault_message(DfModeUnsupported("D:/app")), "D:/app"))
+
+@test
+fn test_the_accessors_the_other_suites_did_not_reach() [io]
+    let e = dfenv.bare(DfLinux, "/home/ada")
+    let a = dfapp.app("novo")
+
+    test.case("base_dir is what every named accessor calls")
+    test.assert(dfbase.base_dir(e, DfConfig) == dfbase.config_dir(e))
+
+    test.case("the home directory is the snapshot's")
+    test.assert(dfbase.home_dir(e) == "/home/ada")
+
+    test.case("data-local is the same as data on Linux")
+    test.assert(dfbase.data_local_dir(e) == dfbase.data_dir(e))
+
+    test.case("and differs on Windows, which is the whole reason for the role")
+    let w = dfenv.bare(DfWindows, "C:/Users/ada")
+    test.assert(dfbase.data_local_dir(w) != dfbase.data_dir(w))
+
+    test.case("the data search path opens with the user's directory")
+    test.assert(dfbase.data_search_path(e)[0] == "/home/ada/.local/share")
+
+    test.case("app_dir is what the program's named accessors call")
+    test.assert(dfapp.app_dir(e, a, DfCache) == dfapp.cache_dir(e, a))
+
+    test.case("the program's data-local directory")
+    test.assert(dfapp.data_local_dir(e, a) == "/home/ada/.local/share/novo")
+
+    test.case("app_file is what the named file accessors call")
+    test.assert(dfapp.app_file(e, a, DfCache, "r.json") == dfapp.cache_file(e, a, "r.json"))
+
+    test.case("a state file")
+    test.assert(dfapp.state_file(e, a, "history") == "/home/ada/.local/state/novo/history")
+
+    test.case("every user directory has a name")
+    test.assert(dfuser.user_dir_name(DfDesktop) == "desktop")
+
+    test.case("and the list carries all nine")
+    test.assert(dfuser.user_dirs().len() == 9)
+
+    test.case("a layout can be rooted anywhere, for a tool operating on another install")
+    test.assert(dfnovo.bin(dfnovo.layout_at("/opt/novo")) == "/opt/novo/bin")
+
+    test.case("the tree lists every directory an uninstaller would enumerate")
+    test.assert(dfnovo.tree(dfnovo.layout(e)).len() > 0)
+
+@test
+fn test_a_directory_is_created_and_the_second_run_is_not_an_error() [io, fs]
+    let dir = scratch_root()
+
+    test.case("the first create")
+    match dfmake.ensure_dir(dir, DfModeDefault)
+        Ok(_)  => test.assert(true)
+        Err(_) => test.assert(false)
+
+    test.case("it is there")
+    test.assert(dfmake.dir_exists(dir))
+
+    test.case("and ensure means ensure — the second run succeeds too")
+    match dfmake.ensure_dir(dir, DfModeDefault)
+        Ok(_)  => test.assert(true)
+        Err(_) => test.assert(false)
+
+@test
+fn test_an_empty_path_is_refused_rather_than_creating_the_working_directory() [io, fs]
+    // The only way a caller reaches here with an empty path is by
+    // passing an accessor's "there is no such directory" answer
+    // straight through.
+    test.case("refused")
+    match dfmake.ensure_dir("", DfModeDefault)
+        Ok(_)  => test.assert(false)
+        Err(_) => test.assert(true)
+
+@test
+fn test_a_private_directory_is_verified_and_not_merely_requested() [io, fs]
+    let e = dfenv.with_home(dfenv.bare(DfLinux, ""), scratch_root())
+    let secret = dfapp.qualified("org", "novo-lang", "datafile-secret")
+
+    test.case("the directory is made")
+    match dfmake.ensure_app_dir(e, secret, DfState, DfModePrivate)
+        Ok(_)  => test.assert(true)
+        Err(_) => test.assert(false)
+
+    test.case("and it really is private, read back from the filesystem")
+    test.assert(dfmake.dir_is_private(dfapp.state_dir(e, secret)))
+
+    test.case("the mode read back is 0700 and not whatever the umask gave")
+    test.assert(dfmake.mode_octal(dfmake.dir_mode(dfapp.state_dir(e, secret))) == "0700")
+
+    test.case("make_private on an existing directory tightens it")
+    match dfmake.make_private(dfapp.state_dir(e, secret))
+        Ok(_)  => test.assert(true)
+        Err(_) => test.assert(false)
+
+@test
+fn test_several_roles_at_once_skip_the_ones_the_platform_lacks() [io, fs]
+    let e = dfenv.with_home(dfenv.bare(DfLinux, ""), scratch_root())
+    let a = dfapp.app("datafile-many")
+
+    test.case("three roles, three paths")
+    let roles = [DfConfig, DfCache, DfState]
+    match dfmake.ensure_app_dirs(e, a, roles, DfModeDefault)
+        Ok(paths) => test.assert(paths.len() == 3)
+        Err(_)    => test.assert(false)
+
+    test.case("a role this platform lacks is skipped rather than refused")
+    let mac = dfenv.with_platform(e, DfMacos)
+    let with_runtime = [DfConfig, DfRuntime]
+    match dfmake.ensure_app_dirs(mac, a, with_runtime, DfModeDefault)
+        Ok(paths) => test.assert(paths.len() == 1)
+        Err(_)    => test.assert(false)
+
+@test
+fn test_the_parent_of_a_file_is_created_so_a_write_can_succeed() [io, fs]
+    let e = dfenv.with_home(dfenv.bare(DfLinux, ""), scratch_root())
+    let a = dfapp.app("datafile-parent")
+    let f = dfapp.config_file(e, a, "config.toml")
+
+    test.case("the parent is made")
+    match dfmake.ensure_parent(f, DfModeDefault)
+        Ok(_)  => test.assert(true)
+        Err(_) => test.assert(false)
+
+    test.case("and it is a directory")
+    test.assert(dfmake.dir_exists(dfapp.config_dir(e, a)))
+
+@test
+fn test_the_existing_candidates_are_the_ones_actually_on_disk() [io, fs]
+    let e = dfenv.with_home(dfenv.bare(DfLinux, ""), scratch_root())
+    let a = dfapp.app("datafile-candidates")
+    let candidates = dfapp.config_file_candidates(e, a, "config.toml")
+
+    test.case("nothing was written, so nothing exists")
+    test.assert(dfmake.existing(candidates).len() == 0)
+
+    test.case("and the first existing one is the empty string rather than a guess")
+    test.assert(dfmake.first_existing(candidates) == "")
+
+@test
+fn test_reading_every_user_directory_opens_the_file_once() [io, fs]
+    let e = dfenv.of(DfLinux, "/home/ada", [("XDG_CONFIG_HOME", "/nonexistent/cfg")])
+
+    test.case("nine roles come back, defaults included")
+    test.assert(dfuser.all_user_dirs(e).len() == 9)

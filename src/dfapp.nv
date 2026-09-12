@@ -1,0 +1,397 @@
+// dfapp.nv — a program's own directories, under the base ones.
+//
+// Every body here is a `todo()`; the signatures are the design.
+//
+// THE PROJECT PATH IS ONE COMPONENT, AND THE PLATFORMS SPELL IT
+// DIFFERENTLY.  This is the fact `directories` exists to encode and
+// the one a naive port gets wrong.  Given a qualifier, an organization
+// and an application:
+//
+//   Linux     `novo`                       — the application, lowercased
+//   macOS     `org.novo-lang.novo`         — reverse DNS, qualifier first
+//   Windows   `novo-lang\novo`             — organization then application
+//
+// A program that used the application name on all three produces a
+// directory macOS's own conventions do not recognise and a Windows
+// directory that collides with another vendor's program of the same
+// name.  `project_path` is that table, and it is `[]`, so it is
+// printed in the tests for all three platforms.
+//
+// THE NAMES ARE CHECKED, AND THE CHECK IS SEPARATE FROM THE JOIN.
+// `app_config_dir` cannot fail — it is a join — so it does not return a
+// `Result`.  `check` is the function that refuses a name with a
+// separator in it, and a program calls it once, at startup, where an
+// error message can name the field in its own manifest that is wrong.
+// The alternative — every accessor returning `Result` — puts a `!` on
+// twelve call sites to guard against a value that was constant since
+// the program was compiled.
+//
+// The join still SANITISES: a name that `check` would refuse has its
+// separators and its `.` and `..` segments removed before it reaches a
+// path, so the failure mode of skipping `check` is a strange directory
+// name and never an escape.  Both halves, because a library that only
+// checked would be bypassed and one that only sanitised would be
+// silent.
+//
+// A VERSION IS PART OF THE PATH, OPTIONALLY.  `platformdirs` appends
+// one, and the reason is real: a program whose on-disk format changed
+// wants the old cache left alone rather than migrated or misread.  It
+// is a field on `DfApp` and it is empty by default, because most
+// programs do not want it and a path that grew a `/1` between releases
+// would strand every existing user's configuration.
+
+use dfenv
+use dfplat
+
+// Who the program is, in the three parts the platforms between them
+// need.
+//
+// `qualifier` is the reverse-DNS head macOS wants — `org`, `com`.
+// `organization` is the vendor — `novo-lang`.  `application` is the
+// program — `novo`.  `version` is the optional on-disk-format
+// generation, empty for almost everything.
+//
+// Only `application` is required; the others are `""` when a program
+// does not have them, and `project_path` composes what it has.
+pub struct DfApp
+    // The reverse-DNS head: `org`, `com`, `io`.  macOS only.
+    qualifier: Str
+    // The vendor: `novo-lang`.  macOS and Windows.
+    organization: Str
+    // The program: `novo`.  Every platform.
+    application: Str
+    // The on-disk-format generation, appended as a further path
+    // component.  `""` for a program that does not version its data.
+    version: Str
+
+// The common case: a program with only its own name.
+//
+// On Linux that is the whole story.  On macOS the project path is then
+// the bare application name rather than a reverse-DNS one, which is
+// what a program with no vendor can honestly claim.
+//
+// ```novo
+// use dfapp
+// use dfenv
+//
+// fn main() [io]
+//     let a = dfapp.app("novo")
+//     println(dfapp.config_dir(dfenv.bare(DfLinux, "/home/ada"), a))
+// ```
+pub fn app(application: Str) -> DfApp []
+    todo("datafile-nv.dfapp.app")
+
+// The full triple, for a program that publishes under a vendor.
+//
+// ```novo
+// use dfapp
+// use dfenv
+//
+// fn main() [io]
+//     let a = dfapp.qualified("org", "novo-lang", "novo")
+//     println(dfapp.config_dir(dfenv.bare(DfMacos, "/Users/ada"), a))
+// ```
+pub fn qualified(qualifier: Str, organization: Str, application: Str) -> DfApp []
+    todo("datafile-nv.dfapp.qualified")
+
+// The same program with an on-disk-format generation appended.
+//
+// ```novo
+// use dfapp
+// use dfenv
+//
+// fn main() [io]
+//     let a = dfapp.versioned(dfapp.app("novo"), "2")
+//     println(dfapp.cache_dir(dfenv.bare(DfLinux, "/home/ada"), a))
+// ```
+pub fn versioned(a: DfApp, version: Str) -> DfApp []
+    todo("datafile-nv.dfapp.versioned")
+
+// The first name in the triple that is not usable as a path
+// component, or `None` when all of them are.
+//
+// Called once at startup.  An empty `application` is refused; an empty
+// `qualifier` or `organization` is not, because those are legitimately
+// absent.
+//
+// ```novo
+// use dfapp
+//
+// fn main() [io]
+//     match dfapp.check(dfapp.app("../etc"))
+//         Some(f) => println(f.message())
+//         None    => println("usable")
+// ```
+pub fn check(a: DfApp) -> ?dfenv.DfFault []
+    todo("datafile-nv.dfapp.check")
+
+// True when a string is usable as a single path component: non-empty,
+// not `.`, not `..`, and carrying neither `/` nor a backslash.
+//
+// The predicate `check` is written in, public because a program
+// validating a name a person typed wants exactly it.
+//
+// ```novo
+// use dfapp
+//
+// fn main() [io]
+//     let ok = dfapp.is_component("novo-lang")
+//     println("${ok}")
+// ```
+pub fn is_component(name: Str) -> Bool []
+    todo("datafile-nv.dfapp.is_component")
+
+// THE TABLE: the one path component — or two, on Windows — that
+// identifies this program on this platform.
+//
+// `novo` on Linux, `org.novo-lang.novo` on macOS,
+// `novo-lang\novo` on Windows, with the version appended when there is
+// one.
+//
+// ```novo
+// use dfapp
+//
+// fn main() [io]
+//     println(dfapp.project_path(DfMacos, dfapp.qualified("org", "novo-lang", "novo")))
+// ```
+pub fn project_path(p: dfplat.DfPlatform, a: DfApp) -> Str []
+    todo("datafile-nv.dfapp.project_path")
+
+// The program's directory for a role: the base directory for that role
+// with the project path joined on, or `""` when the base directory is
+// `""`.
+//
+// The one function; the named accessors below are calls to it.  The
+// empty case propagates rather than producing a path relative to
+// nothing, which is the defect where a program with no home directory
+// writes its configuration into the current working directory.
+//
+// ```novo
+// use dfapp
+// use dfenv
+//
+// fn main() [io]
+//     println(dfapp.app_dir(dfenv.capture(), dfapp.app("novo"), DfState))
+// ```
+pub fn app_dir(e: dfenv.DfEnv, a: DfApp, r: dfplat.DfRole) -> Str []
+    todo("datafile-nv.dfapp.app_dir")
+
+// Every role paired with this program's directory for it, in
+// `dfplat.roles` order.
+//
+// ```novo
+// use dfapp
+// use dfenv
+//
+// fn main() [io]
+//     println("${dfapp.layout(dfenv.capture(), dfapp.app("novo")).len()}")
+// ```
+pub fn layout(e: dfenv.DfEnv, a: DfApp) -> [(dfplat.DfRole, Str)] []
+    todo("datafile-nv.dfapp.layout")
+
+// This program's configuration directory.
+//
+// ```novo
+// use dfapp
+// use dfenv
+//
+// fn main() [io]
+//     println(dfapp.config_dir(dfenv.capture(), dfapp.app("novo")))
+// ```
+pub fn config_dir(e: dfenv.DfEnv, a: DfApp) -> Str []
+    todo("datafile-nv.dfapp.config_dir")
+
+// This program's non-roaming configuration directory.
+//
+// ```novo
+// use dfapp
+// use dfenv
+//
+// fn main() [io]
+//     println(dfapp.config_local_dir(dfenv.capture(), dfapp.app("novo")))
+// ```
+pub fn config_local_dir(e: dfenv.DfEnv, a: DfApp) -> Str []
+    todo("datafile-nv.dfapp.config_local_dir")
+
+// This program's data directory.
+//
+// ```novo
+// use dfapp
+// use dfenv
+//
+// fn main() [io]
+//     println(dfapp.data_dir(dfenv.capture(), dfapp.app("novo")))
+// ```
+pub fn data_dir(e: dfenv.DfEnv, a: DfApp) -> Str []
+    todo("datafile-nv.dfapp.data_dir")
+
+// This program's non-roaming data directory.
+//
+// ```novo
+// use dfapp
+// use dfenv
+//
+// fn main() [io]
+//     println(dfapp.data_local_dir(dfenv.capture(), dfapp.app("novo")))
+// ```
+pub fn data_local_dir(e: dfenv.DfEnv, a: DfApp) -> Str []
+    todo("datafile-nv.dfapp.data_local_dir")
+
+// This program's cache directory.
+//
+// ```novo
+// use dfapp
+// use dfenv
+//
+// fn main() [io]
+//     println(dfapp.cache_dir(dfenv.capture(), dfapp.app("novo")))
+// ```
+pub fn cache_dir(e: dfenv.DfEnv, a: DfApp) -> Str []
+    todo("datafile-nv.dfapp.cache_dir")
+
+// This program's state directory.
+//
+// ```novo
+// use dfapp
+// use dfenv
+//
+// fn main() [io]
+//     println(dfapp.state_dir(dfenv.capture(), dfapp.app("novo")))
+// ```
+pub fn state_dir(e: dfenv.DfEnv, a: DfApp) -> Str []
+    todo("datafile-nv.dfapp.state_dir")
+
+// This program's runtime directory, or `""` where the platform has
+// none.
+//
+// ```novo
+// use dfapp
+// use dfenv
+//
+// fn main() [io]
+//     println(dfapp.runtime_dir(dfenv.capture(), dfapp.app("novo")))
+// ```
+pub fn runtime_dir(e: dfenv.DfEnv, a: DfApp) -> Str []
+    todo("datafile-nv.dfapp.runtime_dir")
+
+// This program's log directory.
+//
+// ```novo
+// use dfapp
+// use dfenv
+//
+// fn main() [io]
+//     println(dfapp.log_dir(dfenv.capture(), dfapp.app("novo")))
+// ```
+pub fn log_dir(e: dfenv.DfEnv, a: DfApp) -> Str []
+    todo("datafile-nv.dfapp.log_dir")
+
+// This program's preference directory.
+//
+// ```novo
+// use dfapp
+// use dfenv
+//
+// fn main() [io]
+//     println(dfapp.preference_dir(dfenv.capture(), dfapp.app("novo")))
+// ```
+pub fn preference_dir(e: dfenv.DfEnv, a: DfApp) -> Str []
+    todo("datafile-nv.dfapp.preference_dir")
+
+// A named file inside this program's directory for a role.
+//
+// `file_name` is sanitised as a single component the same way the
+// project path is, so `config_file(e, a, DfConfig, "../../.ssh/id_rsa")`
+// cannot reach outside the program's own directory.
+//
+// ```novo
+// use dfapp
+// use dfenv
+//
+// fn main() [io]
+//     println(dfapp.app_file(dfenv.capture(), dfapp.app("novo"), DfConfig, "novo.toml"))
+// ```
+pub fn app_file(e: dfenv.DfEnv, a: DfApp, r: dfplat.DfRole, file_name: Str) -> Str []
+    todo("datafile-nv.dfapp.app_file")
+
+// A named file in this program's configuration directory.
+//
+// ```novo
+// use dfapp
+// use dfenv
+//
+// fn main() [io]
+//     println(dfapp.config_file(dfenv.capture(), dfapp.app("novo"), "config.toml"))
+// ```
+pub fn config_file(e: dfenv.DfEnv, a: DfApp, file_name: Str) -> Str []
+    todo("datafile-nv.dfapp.config_file")
+
+// A named file in this program's data directory.
+//
+// ```novo
+// use dfapp
+// use dfenv
+//
+// fn main() [io]
+//     println(dfapp.data_file(dfenv.capture(), dfapp.app("novo"), "index.db"))
+// ```
+pub fn data_file(e: dfenv.DfEnv, a: DfApp, file_name: Str) -> Str []
+    todo("datafile-nv.dfapp.data_file")
+
+// A named file in this program's cache directory.
+//
+// ```novo
+// use dfapp
+// use dfenv
+//
+// fn main() [io]
+//     println(dfapp.cache_file(dfenv.capture(), dfapp.app("novo"), "resolved.json"))
+// ```
+pub fn cache_file(e: dfenv.DfEnv, a: DfApp, file_name: Str) -> Str []
+    todo("datafile-nv.dfapp.cache_file")
+
+// A named file in this program's state directory.
+//
+// ```novo
+// use dfapp
+// use dfenv
+//
+// fn main() [io]
+//     println(dfapp.state_file(dfenv.capture(), dfapp.app("novo"), "history"))
+// ```
+pub fn state_file(e: dfenv.DfEnv, a: DfApp, file_name: Str) -> Str []
+    todo("datafile-nv.dfapp.state_file")
+
+// Every directory this program could read a configuration file from,
+// user first, then site — each with the project path joined on.
+//
+// The list config-nv's `cfgstack.with_files` takes.
+//
+// ```novo
+// use dfapp
+// use dfenv
+//
+// fn main() [io]
+//     for d in dfapp.config_search_path(dfenv.capture(), dfapp.app("novo"))
+//         println(d)
+// ```
+pub fn config_search_path(e: dfenv.DfEnv, a: DfApp) -> [Str] []
+    todo("datafile-nv.dfapp.config_search_path")
+
+// Every file named `file_name` this program could read a configuration
+// from, in precedence order, highest first.
+//
+// The one call a layered configuration reader makes: it hands the
+// result straight to `cfgstack.with_files` with the list reversed, and
+// the platform precedence is decided here rather than guessed there.
+//
+// ```novo
+// use dfapp
+// use dfenv
+//
+// fn main() [io]
+//     for p in dfapp.config_file_candidates(dfenv.capture(), dfapp.app("novo"), "config.toml")
+//         println(p)
+// ```
+pub fn config_file_candidates(e: dfenv.DfEnv, a: DfApp, file_name: Str) -> [Str] []
+    todo("datafile-nv.dfapp.config_file_candidates")

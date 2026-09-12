@@ -1,0 +1,364 @@
+// dfplat.nv — the three conventions, as tables rather than as three
+// implementations.
+//
+// Every body here is a `todo()`; the signatures are the design.
+//
+// WHAT A DIRECTORIES LIBRARY ACTUALLY IS.  It is two tables and a
+// join.  One table says which environment variable overrides a role on
+// a platform; the other says where the role goes when nothing
+// overrides it.  Everything else — `config_dir`, `cache_dir`,
+// `project_config_dir` — is a lookup in those two tables followed by a
+// string join.
+//
+// So the tables are the public surface.  `override_variable` and
+// `default_suffix` are functions a caller can call, print and test, and
+// the higher-level accessors in `dfbase` are defined as calls to them.
+// The alternative — three `match env.os()` chains buried inside twelve
+// accessors — is the same information written twelve times, and a port
+// of it is wrong in one of the twelve.
+//
+// THE ROLE IS A VALUE.  `DfRole` names what a directory is FOR, and
+// every table is keyed by it.  That is what lets `dfmake.ensure_all`
+// take a list of roles, and what lets a program print its own layout
+// without a hard-coded list of accessor names.
+//
+// A ROLE CAN BE ABSENT.  Windows has no runtime directory and no
+// separate state directory; macOS has no runtime directory either.
+// `role_is_absent` says so as a value rather than answering a path
+// that does not exist, and `dfbase.source_of` reports it as
+// `DfRoleAbsent`.  A library that invented `%TEMP%` for the runtime
+// role on Windows would be putting a socket somewhere the platform
+// does not clean up between logins, which is the failure that gets
+// reported as "the second user cannot start the program".
+//
+// THE SEPARATOR IS THE PLATFORM'S, NOT THE MACHINE'S.  `join` takes a
+// `DfPlatform`, so a Linux machine computing a Windows path produces
+// backslashes.  That is what makes the table testable: the whole
+// Windows column is exercised in a test suite that runs on CI running
+// Linux, and it is exercised on every commit rather than on the day
+// somebody has a Windows machine.
+
+// Which set of conventions applies.
+//
+// Four variants and not three.  `DfOther` is what an unrecognised
+// platform answers, and it follows the XDG table — which is the
+// correct guess for every Unix that is not macOS, and a defensible one
+// for anything else.  A library that panicked here would refuse to
+// start on a BSD for no reason.
+//
+// ```novo
+// use dfplat
+//
+// fn main() [io]
+//     println(dfplat.platform_name(DfLinux))
+// ```
+pub enum DfPlatform
+    // Linux and every other Unix that follows the XDG Base Directory
+    // Specification.
+    DfLinux
+    // macOS: `~/Library/...`, and the reverse-DNS project path.
+    DfMacos
+    // Windows: `%APPDATA%` and `%LOCALAPPDATA%`, and the
+    // `Organization\Application` project path.
+    DfWindows
+    // Anything the platform name did not identify.  Reads the XDG
+    // table.
+    DfOther
+
+// What a directory is FOR.
+//
+// The key to both tables.  Named after the role rather than after a
+// platform's word for it, because the platforms disagree about the
+// words and agree about the roles: what Windows calls `AppData\Roaming`
+// and XDG calls `XDG_CONFIG_HOME` are both the place configuration goes.
+//
+// ```novo
+// use dfplat
+//
+// fn main() [io]
+//     println(dfplat.role_name(DfConfig))
+// ```
+pub enum DfRole
+    // Configuration a person edits.  Roams between machines on
+    // Windows.
+    DfConfig
+    // Configuration that must NOT roam: a path, a machine id, a
+    // socket name.  The same directory as `DfConfig` on Linux and
+    // macOS; `%LOCALAPPDATA%` rather than `%APPDATA%` on Windows.
+    DfConfigLocal
+    // Data the program produced and would like kept: a database, a
+    // library of documents.
+    DfData
+    // Data that must not roam: an index, a compiled artifact.
+    DfDataLocal
+    // Data the program can recompute.  Safe for anything to delete.
+    DfCache
+    // State between runs that is neither configuration nor data: a
+    // history file, a last-session record, a cursor.
+    DfState
+    // A directory for sockets and pid files, emptied at logout.
+    // Absent on macOS and Windows.
+    DfRuntime
+    // Where log files go.
+    DfLog
+    // macOS's `~/Library/Preferences`, which is NOT the same place as
+    // its application-support directory.  The same as `DfConfig`
+    // elsewhere.
+    DfPreference
+    // Where a user-installed executable goes.  Linux only; absent on
+    // macOS and Windows, where the answer is an installer's business.
+    DfExecutable
+
+// Why a directory is what it is.
+//
+// Answered beside every path by `dfbase.source_of`, because "where
+// does my config live" and "why is it THERE" are asked by the same
+// person one second apart, and a library that answers only the first
+// makes the second a source-reading exercise.
+//
+// ```novo
+// use dfplat
+//
+// fn main() [io]
+//     println(dfplat.source_name(DfFromDefault))
+// ```
+pub enum DfSource
+    // An environment variable set it, and the variable is named.
+    DfFromOverride(name: Str)
+    // The platform's default, relative to the home directory.
+    DfFromDefault
+    // An override was set and IGNORED because it is not absolute —
+    // the XDG specification's own rule.  The variable is named, so a
+    // program can tell a person which of their variables is being
+    // discarded.
+    DfOverrideRejected(name: Str)
+    // No override, and no home directory to hang a default off.  The
+    // path is `""`.
+    DfNoHome
+    // The platform carries this role but defines NO fallback for it,
+    // and no override is set.  `XDG_RUNTIME_DIR` is the whole reason
+    // this variant exists: the specification gives it no default, and
+    // the two obvious inventions — `/tmp` and the cache directory —
+    // are respectively world-writable and not emptied at logout.  The
+    // path is `""` and a caller that needs one chooses in its own
+    // code.
+    DfNoDefault
+    // This platform has no directory for this role.  The path is `""`.
+    DfRoleAbsent
+
+// The lower-case name of a platform: `linux`, `macos`, `windows`,
+// `other`.
+//
+// The first three are `env.os`'s own spellings, so a program can
+// compare them directly with what the standard library answers.
+//
+// ```novo
+// use dfplat
+//
+// fn main() [io]
+//     println(dfplat.platform_name(DfWindows))
+// ```
+pub fn platform_name(p: DfPlatform) -> Str []
+    todo("datafile-nv.dfplat.platform_name")
+
+// The platform an `env.os`-shaped name identifies.
+//
+// `"linux"`, `"macos"`, `"windows"` and nothing else is recognised;
+// everything else is `DfOther`.  Taking the name as a string rather
+// than reading the environment here is what makes the whole table
+// testable: a test names `"windows"` and gets the Windows column.
+//
+// ```novo
+// use dfplat
+//
+// fn main() [io]
+//     println(dfplat.platform_name(dfplat.platform_of("windows")))
+// ```
+pub fn platform_of(os_name: Str) -> DfPlatform []
+    todo("datafile-nv.dfplat.platform_of")
+
+// The platform this process is running on.
+//
+// `[io]` because `env.os` is `[io]`.  The one function in this module
+// that performs anything, and `dfenv.capture` is the only caller that
+// has to.
+//
+// ```novo
+// use dfplat
+//
+// fn main() [io]
+//     println(dfplat.platform_name(dfplat.current_platform()))
+// ```
+pub fn current_platform() -> DfPlatform [io]
+    todo("datafile-nv.dfplat.current_platform")
+
+// The lower-case name of a role: `config`, `cache`, `data`, `state`,
+// `runtime`, `log`, and so on.
+//
+// ```novo
+// use dfplat
+//
+// fn main() [io]
+//     println(dfplat.role_name(DfDataLocal))
+// ```
+pub fn role_name(r: DfRole) -> Str []
+    todo("datafile-nv.dfplat.role_name")
+
+// Every role, in a stable order, for a program that prints its own
+// layout.
+//
+// The order is the order of the `DfRole` declaration, and it does not
+// change between releases: a `novo config --paths` that printed its
+// rows in a different order after an upgrade would produce a diff
+// nobody asked for.
+//
+// ```novo
+// use dfplat
+//
+// fn main() [io]
+//     println("${dfplat.roles().len()}")
+// ```
+pub fn roles() -> [DfRole] []
+    todo("datafile-nv.dfplat.roles")
+
+// THE FIRST TABLE: the environment variable that overrides a role on a
+// platform, or `""` when the role has no override.
+//
+// On Linux this is the XDG variable — `XDG_CONFIG_HOME`,
+// `XDG_CACHE_HOME`, `XDG_DATA_HOME`, `XDG_STATE_HOME`,
+// `XDG_RUNTIME_DIR`.  On macOS and Windows it is `""` for almost
+// everything, because neither platform has a per-role override the way
+// XDG does; what they have is `%APPDATA%` and `%LOCALAPPDATA%`, which
+// this table reports for the roles they carry.
+//
+// A caller printing "your config lives at X because Y is set" reads
+// this and `dfbase.source_of`.
+//
+// ```novo
+// use dfplat
+//
+// fn main() [io]
+//     println(dfplat.override_variable(DfLinux, DfConfig))
+// ```
+pub fn override_variable(p: DfPlatform, r: DfRole) -> Str []
+    todo("datafile-nv.dfplat.override_variable")
+
+// THE SECOND TABLE: where a role goes relative to the home directory
+// when nothing overrides it, or `""` when the platform has no such
+// directory.
+//
+// `.config` on Linux, `Library/Application Support` on macOS,
+// `AppData/Roaming` on Windows — as a RELATIVE path with forward
+// slashes, which `join` converts.  Relative because the home directory
+// is the caller's, and a table that embedded one could not be printed
+// for another machine.
+//
+// ```novo
+// use dfplat
+//
+// fn main() [io]
+//     println(dfplat.default_suffix(DfMacos, DfCache))
+// ```
+pub fn default_suffix(p: DfPlatform, r: DfRole) -> Str []
+    todo("datafile-nv.dfplat.default_suffix")
+
+// True when this platform has no directory for this role at all.
+//
+// The runtime directory on macOS and Windows, and the executable
+// directory on both.  Answered as a value rather than as an empty
+// string so that a caller can distinguish "the platform does not do
+// this" from "your home directory is unset" — the repairs are
+// different and only one of them is the person's fault.
+//
+// ```novo
+// use dfplat
+//
+// fn main() [io]
+//     println("${dfplat.role_is_absent(DfWindows, DfRuntime)}")
+// ```
+pub fn role_is_absent(p: DfPlatform, r: DfRole) -> Bool []
+    todo("datafile-nv.dfplat.role_is_absent")
+
+// The name of a source, for a message: `override`, `default`,
+// `override-rejected`, `no-home`, `no-default`, `role-absent`.
+//
+// ```novo
+// use dfplat
+//
+// fn main() [io]
+//     println(dfplat.source_name(DfNoHome))
+// ```
+pub fn source_name(s: DfSource) -> Str []
+    todo("datafile-nv.dfplat.source_name")
+
+// The variable a source names, or `""` when it names none.
+//
+// ```novo
+// use dfplat
+//
+// fn main() [io]
+//     println(dfplat.source_variable(DfFromOverride("XDG_CACHE_HOME")))
+// ```
+pub fn source_variable(s: DfSource) -> Str []
+    todo("datafile-nv.dfplat.source_variable")
+
+// The path separator a platform writes: `/` or `\`.
+//
+// ```novo
+// use dfplat
+//
+// fn main() [io]
+//     println(dfplat.separator(DfLinux))
+// ```
+pub fn separator(p: DfPlatform) -> Str []
+    todo("datafile-nv.dfplat.separator")
+
+// `a` and `b` joined with exactly one of the platform's separators.
+//
+// An empty `a` answers `b` and an empty `b` answers `a`, because the
+// tables above are full of empty strings on purpose and a join that
+// produced a leading separator out of one would silently hand back an
+// absolute path pointing at the root of the disk.
+//
+// ```novo
+// use dfplat
+//
+// fn main() [io]
+//     println(dfplat.join(DfWindows, "C:\\Users\\ada", "AppData"))
+// ```
+pub fn join(p: DfPlatform, a: Str, b: Str) -> Str []
+    todo("datafile-nv.dfplat.join")
+
+// True when a path is absolute BY THIS PLATFORM'S RULES.
+//
+// `/srv/data` is absolute on Linux and macOS; on Windows the absolute
+// forms are `C:\...`, `C:/...` and `\\server\share`, and `/srv/data`
+// is not one of them.  The XDG specification says a relative override
+// must be ignored, so this is the predicate that rule is written in,
+// and getting it wrong on Windows means honouring a variable that
+// points at a different drive's current directory.
+//
+// ```novo
+// use dfplat
+//
+// fn main() [io]
+//     let ok = dfplat.is_absolute(DfWindows, "C:/Users")
+//     println("${ok}")
+// ```
+pub fn is_absolute(p: DfPlatform, path: Str) -> Bool []
+    todo("datafile-nv.dfplat.is_absolute")
+
+// A path with every separator converted to this platform's.
+//
+// The tables carry forward slashes; a Windows caller wants
+// backslashes.  Applied once, at the end of a join, rather than in
+// every table entry.
+//
+// ```novo
+// use dfplat
+//
+// fn main() [io]
+//     println(dfplat.to_platform(DfWindows, "AppData/Roaming"))
+// ```
+pub fn to_platform(p: DfPlatform, path: Str) -> Str []
+    todo("datafile-nv.dfplat.to_platform")

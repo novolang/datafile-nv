@@ -1,0 +1,390 @@
+// dfenv.nv — THE LOAD-BEARING INTERFACE: the environment read once,
+// into a value.
+//
+// Every body here is a `todo()`; the signatures are the design.
+//
+// A `DfEnv` is a snapshot: the platform, the home directory, and the
+// handful of variables this package's tables mention.  `capture` reads
+// it — the only `[io]` a program has to perform — and every directory
+// in `dfbase`, `dfapp` and `dfnovo` is `[]` arithmetic over the value
+// it returns.
+//
+// THREE THINGS FOLLOW FROM THAT, AND THEY ARE WHY THE DESIGN HOLDS.
+//
+// The platform table is TESTABLE ON ANY MACHINE.  `of(DfWindows,
+// "C:/Users/ada", pairs)` builds an environment that no machine in this
+// project has, and the Windows column is then exercised by an ordinary
+// test on every commit.  A library that read `env.get` inside
+// `config_dir` can only be tested on the platform it is running on,
+// which is why the macOS column of most of them is wrong in a way
+// nobody notices for a year.
+//
+// The answers are CONSISTENT.  `directories` and `platformdirs` both
+// read the environment per accessor, so a program that calls
+// `config_dir` and then `cache_dir` can be handed two answers from two
+// different environments — a `setenv` between them, a variable a
+// plugin changed.  One snapshot makes that impossible, and it makes
+// the whole layout one value a program can log, print, or pass to a
+// subprocess.
+//
+// The COST is one pass.  `capture` reads at most eleven variables plus
+// the home directory and the platform name; the alternative reads one
+// or two per accessor and a program with twelve accessors reads the
+// environment twelve times.
+//
+// WHAT IS NOT IN THE SNAPSHOT.  The disk.  `capture` does not check
+// that any directory exists — a directories library that refused to
+// answer because the directory was absent would be useless to the
+// installer whose job is to create it.  `dfmake` is where existence is
+// a question.
+//
+// AN UNSET VARIABLE IS `""` AND NOT AN OPTIONAL.  `env.home` in the
+// standard library answers `""` when the platform will not say, "not
+// `?Str`, because there is nothing a caller does differently about
+// it", and this module follows that precedent throughout: every
+// accessor in the package answers a `Str`, `""` means "there is no
+// such directory", and `dfbase.source_of` says which of the four
+// reasons applies.  A package where twelve accessors each returned an
+// optional would push a `??` into every call site and every one of them
+// would spell the fallback differently.
+
+use dfplat
+
+// The environment, as a value.
+//
+// `values` holds only the variables `variable_names` names —
+// not the whole environment.  Two reasons: a snapshot of a process's
+// entire environment is a security object nobody asked for (it carries
+// tokens), and a value small enough to print is a value a person will
+// actually print.
+//
+// The pairs are in `variable_names` order, and an unset variable is
+// simply absent rather than present with an empty value — which is the
+// distinction `is_set` exists to preserve, because `XDG_CONFIG_HOME=`
+// set to the empty string is treated by the specification as unset.
+pub struct DfEnv
+    // Which convention applies.
+    platform: dfplat.DfPlatform
+    // The home directory, absolute, with no trailing separator.  `""`
+    // when the platform would not say.
+    home: Str
+    // The variables this package reads, name paired with value.
+    values: [(Str, Str)]
+
+// Everything that can go wrong.  Small on purpose: almost nothing in
+// this package can fail, because almost all of it is a join.
+//
+// ```novo
+// use dfenv
+//
+// fn main() [io]
+//     println(dfenv.fault_message(DfNameNotAComponent("../etc")))
+// ```
+pub enum DfFault
+    // An application, organization or qualifier name is not usable as
+    // a single path component: it is empty, it is `.` or `..`, or it
+    // contains a separator.  Refused before it reaches a join, because
+    // an application named `../..` would put a cache in somebody's
+    // home directory.
+    DfNameNotAComponent(name: Str)
+    // A directory was asked for that this platform does not have, and
+    // the caller asked for a path rather than for the empty string.
+    DfNoSuchRole(role: Str, platform: Str)
+    // There is no home directory and the role has no override set, so
+    // there is nothing to compute a path from.
+    DfHomeUnknown(role: Str)
+    // A create failed at this path.
+    DfCreateFailed(path: Str)
+    // A directory exists at this path but is not a directory, or
+    // cannot be entered.
+    DfNotADirectory(path: Str)
+    // The directory exists and its mode is wider than the caller
+    // required.  Both modes are named, in octal, because the
+    // interesting half is what it actually is.
+    DfModeTooWide(path: Str, wanted: Int, found: Int)
+    // The platform, the filesystem or the standard library would not
+    // change a mode.  Named separately from `DfCreateFailed` because
+    // the repair is different: a FAT volume or a Windows host cannot
+    // do it at all, and a caller storing a secret needs to know that
+    // rather than believe a directory is private.
+    DfModeUnsupported(path: Str)
+
+// The sentence a `Result<_, DfFault>` carries.
+//
+// SPEC § 3.4 admits a type as a `Result`'s error type only when it
+// implements `Error`, so this impl is what lets `dfmake` name its own
+// refusals instead of returning `Result<_, Str>`.
+//
+// Every message names the path or the name it is about; a
+// "permission denied" with no directory in it costs a person half an
+// hour.
+//
+// ```novo
+// use dfenv
+//
+// fn main() [io]
+//     println(dfenv.fault_message(DfCreateFailed("/var/lib/app")))
+// ```
+impl Error for DfFault
+    // Panics with `not implemented` until the bodies land.
+    fn message(self) -> Str
+        todo("datafile-nv.dfenv.DfFault.message")
+
+// The same sentence as a free function, for a caller holding a fault
+// it is not returning.
+//
+// ```novo
+// use dfenv
+//
+// fn main() [io]
+//     println(dfenv.fault_message(DfHomeUnknown("config")))
+// ```
+pub fn fault_message(f: DfFault) -> Str []
+    todo("datafile-nv.dfenv.fault_message")
+
+// Every variable name this package reads on a platform, in a stable
+// order.
+//
+// Linux: the seven XDG variables — the five `*_HOME`/`*_DIR` ones,
+// `XDG_CONFIG_DIRS` and `XDG_DATA_DIRS` — plus `HOME`.  macOS:
+// `HOME`.  Windows: `APPDATA`, `LOCALAPPDATA`, `USERPROFILE`,
+// `PROGRAMDATA`.
+// `capture` reads exactly this list and nothing else, so a reader can
+// see the package's whole environmental footprint by calling one
+// function.
+//
+// ```novo
+// use dfenv
+//
+// fn main() [io]
+//     for name in dfenv.variable_names(DfLinux)
+//         println(name)
+// ```
+pub fn variable_names(p: dfplat.DfPlatform) -> [Str] []
+    todo("datafile-nv.dfenv.variable_names")
+
+// Read the environment of the process this is running in.
+//
+// `[io]` — `env.os`, `env.home` and one `env.get` per name in
+// `variable_names`.  This is the only function a program has to call
+// that performs anything; hold the result and everything else is
+// arithmetic.
+//
+// ```novo
+// use dfenv
+// use dfbase
+//
+// fn main() [io]
+//     let e = dfenv.capture()
+//     println(dfbase.config_dir(e))
+// ```
+pub fn capture() -> DfEnv [io]
+    todo("datafile-nv.dfenv.capture")
+
+// Read the environment, but answer for a platform the caller names.
+//
+// For a cross-platform tool that computes where a file WOULD live on
+// another machine — an installer building a package, a documentation
+// generator printing a table.  The variables read are that platform's,
+// so the answer is the one that platform would give with this
+// environment.
+//
+// ```novo
+// use dfenv
+// use dfbase
+//
+// fn main() [io]
+//     let e = dfenv.capture_for(DfWindows)
+//     println(dfbase.config_dir(e))
+// ```
+pub fn capture_for(p: dfplat.DfPlatform) -> DfEnv [io]
+    todo("datafile-nv.dfenv.capture_for")
+
+// An environment built by hand, with no environment and no disk.
+//
+// The test constructor, and the reason the platform tables can be
+// exercised on any machine.  Public and not hidden behind a feature
+// flag: a caller with the values in a configuration file rather than
+// in the environment has exactly the same need.
+//
+// ```novo
+// use dfenv
+// use dfbase
+//
+// fn main() [io]
+//     let e = dfenv.of(DfMacos, "/Users/ada", [])
+//     println(dfbase.cache_dir(e))
+// ```
+pub fn of(p: dfplat.DfPlatform, home: Str, values: [(Str, Str)]) -> DfEnv []
+    todo("datafile-nv.dfenv.of")
+
+// An environment with no variables set at all, for the platform named.
+//
+// The shortest way to ask "what does this platform do by default", and
+// the row most of the table's tests want.
+//
+// ```novo
+// use dfenv
+// use dfbase
+//
+// fn main() [io]
+//     println(dfbase.config_dir(dfenv.bare(DfLinux, "/home/ada")))
+// ```
+pub fn bare(p: dfplat.DfPlatform, home: Str) -> DfEnv []
+    todo("datafile-nv.dfenv.bare")
+
+// Which convention this environment follows.
+//
+// ```novo
+// use dfenv
+// use dfplat
+//
+// fn main() [io]
+//     println(dfplat.platform_name(dfenv.platform(dfenv.bare(DfLinux, "/h"))))
+// ```
+pub fn platform(e: DfEnv) -> dfplat.DfPlatform []
+    todo("datafile-nv.dfenv.platform")
+
+// The home directory, absolute and with no trailing separator, or
+// `""`.
+//
+// ```novo
+// use dfenv
+//
+// fn main() [io]
+//     println(dfenv.home(dfenv.bare(DfLinux, "/home/ada/")))
+// ```
+pub fn home(e: DfEnv) -> Str []
+    todo("datafile-nv.dfenv.home")
+
+// The value of a variable in the snapshot, or `""` when it is unset.
+//
+// ```novo
+// use dfenv
+//
+// fn main() [io]
+//     let e = dfenv.of(DfLinux, "/home/ada", [("XDG_CACHE_HOME", "/fast/cache")])
+//     println(dfenv.variable(e, "XDG_CACHE_HOME"))
+// ```
+pub fn variable(e: DfEnv, name: Str) -> Str []
+    todo("datafile-nv.dfenv.variable")
+
+// True when a variable is present in the snapshot with a NON-EMPTY
+// value.
+//
+// The XDG specification treats a variable set to the empty string as
+// unset, so this predicate and `variable(e, n) != ""` answer the same
+// thing on purpose — the predicate exists so a reader of a call site
+// can see which question was asked.
+//
+// ```novo
+// use dfenv
+//
+// fn main() [io]
+//     let e = dfenv.of(DfLinux, "/home/ada", [("XDG_STATE_HOME", "")])
+//     let present = dfenv.is_set(e, "XDG_STATE_HOME")
+//     println("${present}")
+// ```
+pub fn is_set(e: DfEnv, name: Str) -> Bool []
+    todo("datafile-nv.dfenv.is_set")
+
+// True when a variable is set AND its value is absolute by this
+// platform's rules — the XDG rule that a relative override is invalid
+// and must be ignored.
+//
+// The rule is in the specification and almost nothing implements it.
+// The consequence of not implementing it is that
+// `XDG_CONFIG_HOME=.config` — which looks right, and which a person
+// types into a shell profile — puts a program's configuration under
+// whatever directory it happened to be started in, and the
+// configuration disappears the next time it is started somewhere else.
+//
+// ```novo
+// use dfenv
+//
+// fn main() [io]
+//     let e = dfenv.of(DfLinux, "/home/ada", [("XDG_CONFIG_HOME", ".config")])
+//     let usable = dfenv.override_is_usable(e, "XDG_CONFIG_HOME")
+//     println("${usable}")
+// ```
+pub fn override_is_usable(e: DfEnv, name: Str) -> Bool []
+    todo("datafile-nv.dfenv.override_is_usable")
+
+// The snapshot with one variable set.
+//
+// Answers a NEW `DfEnv`; nothing here mutates, because `[mutate]` is
+// an effect this package does not want on its rows and a snapshot that
+// changed under a caller would defeat the point of taking one.
+//
+// ```novo
+// use dfenv
+// use dfbase
+//
+// fn main() [io]
+//     let e = dfenv.with_variable(dfenv.bare(DfLinux, "/h"), "XDG_CACHE_HOME", "/fast")
+//     println(dfbase.cache_dir(e))
+// ```
+pub fn with_variable(e: DfEnv, name: Str, value: Str) -> DfEnv []
+    todo("datafile-nv.dfenv.with_variable")
+
+// The snapshot with one variable removed.
+//
+// ```novo
+// use dfenv
+// use dfbase
+//
+// fn main() [io]
+//     let e = dfenv.without_variable(dfenv.capture(), "XDG_CACHE_HOME")
+//     println(dfbase.cache_dir(e))
+// ```
+pub fn without_variable(e: DfEnv, name: Str) -> DfEnv []
+    todo("datafile-nv.dfenv.without_variable")
+
+// The snapshot with a different home directory.
+//
+// What a program run as a service under a system account needs: the
+// account's home is `/`, and the program was told where its data goes
+// by its own configuration.
+//
+// ```novo
+// use dfenv
+// use dfbase
+//
+// fn main() [io]
+//     let e = dfenv.with_home(dfenv.capture(), "/var/lib/myservice")
+//     println(dfbase.data_dir(e))
+// ```
+pub fn with_home(e: DfEnv, home_dir: Str) -> DfEnv []
+    todo("datafile-nv.dfenv.with_home")
+
+// The snapshot with a different platform, the variables unchanged.
+//
+// For the documentation generator that prints one table per platform
+// from one captured environment.
+//
+// ```novo
+// use dfenv
+// use dfbase
+//
+// fn main() [io]
+//     println(dfbase.config_dir(dfenv.with_platform(dfenv.capture(), DfMacos)))
+// ```
+pub fn with_platform(e: DfEnv, p: dfplat.DfPlatform) -> DfEnv []
+    todo("datafile-nv.dfenv.with_platform")
+
+// Every variable in the snapshot, name paired with value, in
+// `variable_names` order.
+//
+// What a program logs when it starts, so that a report of "it used the
+// wrong directory" arrives with the reason attached.
+//
+// ```novo
+// use dfenv
+//
+// fn main() [io]
+//     let e = dfenv.capture()
+//     for name in dfenv.variable_names(dfenv.platform(e))
+//         println("${name}=${dfenv.variable(e, name)}")
+// ```
+pub fn variables(e: DfEnv) -> [(Str, Str)] []
+    todo("datafile-nv.dfenv.variables")

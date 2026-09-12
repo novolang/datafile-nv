@@ -1,0 +1,157 @@
+// dfuser_tests.nv — the `user-dirs.dirs` parse, which is the one
+// format in this package.
+//
+// RED ON PURPOSE: every body under `src/` is a `todo()`, so every
+// assertion here reaches `not implemented: datafile-nv.<module>.<fn>`.
+//
+// The parse is `[]` and the file read is `[fs]`, so every case that
+// matters is exercised from a string here and the disk appears in
+// exactly two assertions.
+
+use std.test
+use dfenv
+use dfuser
+
+@test
+fn test_the_ordinary_line_is_quoted_and_carries_home() [io]
+    let text = "XDG_DOCUMENTS_DIR=\"\$HOME/Documents\"\n"
+    let pairs = dfuser.parse_user_dirs(text, "/home/ada")
+
+    test.case("one entry")
+    test.assert(pairs.len() == 1)
+
+    test.case("the key keeps its XDG spelling")
+    test.assert(pairs[0].0 == "XDG_DOCUMENTS_DIR")
+
+    test.case("the quotes are gone and \$HOME is expanded")
+    test.assert(pairs[0].1 == "/home/ada/Documents")
+
+@test
+fn test_only_home_is_expanded() [io]
+    // The file is written by a program and read by programs.  Treating
+    // it as shell would turn a command substitution in a configuration
+    // file into a command.
+    let text = "XDG_DOWNLOAD_DIR=\"\$OTHER/dl\"\n"
+    let pairs = dfuser.parse_user_dirs(text, "/home/ada")
+
+    test.case("an unknown variable is left exactly as written")
+    test.assert(pairs[0].1 == "\$OTHER/dl")
+
+@test
+fn test_an_absolute_value_is_taken_as_it_stands() [io]
+    let text = "XDG_DOWNLOAD_DIR=\"/mnt/big/dl\"\n"
+    let pairs = dfuser.parse_user_dirs(text, "/home/ada")
+
+    test.case("no home is prepended")
+    test.assert(pairs[0].1 == "/mnt/big/dl")
+
+@test
+fn test_a_trailing_separator_is_removed() [io]
+    // `xdg-user-dirs` writes `XDG_DESKTOP_DIR="\$HOME/"` for a person
+    // whose desktop IS their home directory, and a join onto it would
+    // otherwise produce two separators.
+    let text = "XDG_DESKTOP_DIR=\"\$HOME/\"\n"
+    let pairs = dfuser.parse_user_dirs(text, "/home/ada")
+
+    test.case("the home directory itself, with no trailing slash")
+    test.assert(pairs[0].1 == "/home/ada")
+
+@test
+fn test_comments_blanks_and_unknown_lines_are_skipped() [io]
+    // A strict parser that refused a line would leave a person with no
+    // Documents directory because a future generator added a field.
+    let text = "# xdg-user-dirs generated\n\nXDG_MUSIC_DIR=\"\$HOME/Music\"\nGARBAGE\n"
+    let pairs = dfuser.parse_user_dirs(text, "/home/ada")
+
+    test.case("only the one real entry survives")
+    test.assert(pairs.len() == 1)
+
+    test.case("and it is the right one")
+    test.assert(pairs[0].1 == "/home/ada/Music")
+
+@test
+fn test_an_empty_file_is_empty_and_not_an_error() [io]
+    test.case("no entries")
+    test.assert(dfuser.parse_user_dirs("", "/home/ada").len() == 0)
+
+@test
+fn test_the_parsed_entry_beats_the_default() [io]
+    let e = dfenv.bare(DfLinux, "/home/ada")
+    let pairs = dfuser.parse_user_dirs("XDG_DOCUMENTS_DIR=\"\$HOME/Documenti\"\n", "/home/ada")
+
+    test.case("a localised directory is honoured")
+    test.assert(dfuser.user_dir_from(e, pairs, DfDocuments) == "/home/ada/Documenti")
+
+    test.case("a role the file does not carry falls back to the default")
+    test.assert(dfuser.user_dir_from(e, pairs, DfMusic) == "/home/ada/Music")
+
+    test.case("and with no entries at all every role falls back")
+    test.assert(dfuser.user_dir_from(e, [], DfDocuments) == "/home/ada/Documents")
+
+@test
+fn test_the_defaults_per_platform() [io]
+    test.case("Linux")
+    let linux = dfenv.bare(DfLinux, "/home/ada")
+    test.assert(dfuser.default_user_dir(linux, DfDownload) == "/home/ada/Downloads")
+
+    test.case("macOS uses the same English names under the home directory")
+    let mac = dfenv.bare(DfMacos, "/Users/ada")
+    test.assert(dfuser.default_user_dir(mac, DfPictures) == "/Users/ada/Pictures")
+
+    test.case("Windows, with backslashes")
+    let win = dfenv.bare(DfWindows, "C:/Users/ada")
+    test.assert(dfuser.default_user_dir(win, DfDocuments) == "C:\\Users\\ada\\Documents")
+
+    test.case("no home means no directory, not a relative one")
+    test.assert(dfuser.default_user_dir(dfenv.bare(DfLinux, ""), DfDocuments) == "")
+
+@test
+fn test_the_file_is_only_looked_for_on_linux() [io]
+    test.case("Linux names it under the config directory")
+    let linux = dfenv.bare(DfLinux, "/home/ada")
+    test.assert(dfuser.user_dirs_path(linux) == "/home/ada/.config/user-dirs.dirs")
+
+    test.case("macOS has no such file")
+    test.assert(dfuser.user_dirs_path(dfenv.bare(DfMacos, "/Users/ada")) == "")
+
+    test.case("nor Windows")
+    test.assert(dfuser.user_dirs_path(dfenv.bare(DfWindows, "C:/Users/ada")) == "")
+
+@test
+fn test_the_xdg_keys() [io]
+    test.case("documents")
+    test.assert(dfuser.xdg_key(DfDocuments) == "XDG_DOCUMENTS_DIR")
+
+    test.case("download is SINGULAR in the file, and plural in the directory name")
+    test.assert(dfuser.xdg_key(DfDownload) == "XDG_DOWNLOAD_DIR")
+
+    test.case("public share")
+    test.assert(dfuser.xdg_key(DfPublicShare) == "XDG_PUBLICSHARE_DIR")
+
+    test.case("fonts are not in the file at all")
+    test.assert(dfuser.xdg_key(DfFonts) == "")
+
+@test
+fn test_fonts_are_a_list_because_every_platform_has_two() [io]
+    test.case("Linux: the XDG one first, then the historical one")
+    let linux = dfenv.bare(DfLinux, "/home/ada")
+    test.assert(dfuser.font_dirs(linux)[0] == "/home/ada/.local/share/fonts")
+    test.assert(dfuser.font_dirs(linux)[1] == "/home/ada/.fonts")
+
+    test.case("macOS: the user's first, then the machine's")
+    let mac = dfenv.bare(DfMacos, "/Users/ada")
+    test.assert(dfuser.font_dirs(mac)[0] == "/Users/ada/Library/Fonts")
+    test.assert(dfuser.font_dirs(mac)[1] == "/Library/Fonts")
+
+@test
+fn test_the_disk_half_falls_back_when_there_is_no_file() [io, fs]
+    // The two assertions in this file that touch a disk.  A machine
+    // with no desktop environment has no `user-dirs.dirs`, and that is
+    // the ordinary case rather than a failure.
+    let e = dfenv.of(DfLinux, "/home/ada", [("XDG_CONFIG_HOME", "/nonexistent/cfg")])
+
+    test.case("a missing file is not an error")
+    test.assert(dfuser.read_user_dirs(e).len() == 0)
+
+    test.case("and the role still answers its default")
+    test.assert(dfuser.user_dir(e, DfDocuments) == "/home/ada/Documents")
