@@ -1,284 +1,353 @@
 # datafile-nv
 
-**Status: NOT IMPLEMENTED — interface only.**
+Every operating system has a place a program's configuration belongs, a
+place its cache belongs, and several more. This package answers where
+those directories are on Linux, on macOS and on Windows. It is a
+novo-lang port of Rust's [directories](https://docs.rs/directories) and
+Python's [platformdirs](https://platformdirs.readthedocs.io), and the
+[XDG Base Directory Specification](https://specifications.freedesktop.org/basedir-spec/)
+is the authority for the Linux answers.
 
-Every public function below is published with its signature and its
-effect row, and every body is `todo()`.  Installing this package works;
-calling it panics with `not implemented`.
+**Status: NOT IMPLEMENTED — interface only.** Every function is
+declared with its full signature, but every body is a `todo()` that
+panics when called. The package is published so its design can be
+reviewed and depended on before it is implemented. Version 0.1.0 will
+be the first working release.
 
-## What this is
+## What it is
 
-Where a program's configuration, data, cache, state, runtime and log
-directories live — on Linux, on macOS and on Windows.  A novo-lang port
-of Rust's [directories](https://docs.rs/directories) and Python's
-[platformdirs](https://platformdirs.readthedocs.io), cut to the layer:
-the environment is read **once**, into a value, and every directory is
-arithmetic over it.
+A **role** is what a directory is for, rather than what a platform
+calls it. The platforms disagree about the words and agree about the
+roles: `AppData\Roaming` on Windows and `$XDG_CONFIG_HOME` on Linux are
+both the place configuration goes.
 
-- `dfplat` — the two tables.  Which environment variable overrides a
-  role on a platform, and where the role goes when nothing does.
-- `dfenv` — `DfEnv`, the snapshot, and the only `[io]` a program has to
-  perform.
-- `dfbase` — the base directories, `[]` over a `DfEnv`.
-- `dfapp` — `DfApp` and the project path, which is spelled differently
-  on all three platforms.
-- `dfuser` — Documents, Downloads, Pictures, and the one file this
-  package reads.
-- `dfmake` — the `[fs]` half: create the directory, and verify the mode
-  when a secret is going into it.
-- `dfnovo` — the novo toolchain's own layout, as a worked example.
-
-```
-novo pkg add datafile-nv
-novo pkg build
-novo test
-```
-
-## The one example that will work
-
-```novo ignore
-use dfenv
-use dfapp
-use dfmake
-
-fn main() [io, fs]
-    // One read of the environment.  Everything after this is arithmetic.
-    let e = dfenv.capture()
-    let me = dfapp.qualified("org", "novo-lang", "novo")
-
-    match dfapp.check(me)
-        Some(f) => println(f.message())
-        None    =>
-            match dfmake.ensure_app_dir(e, me, DfCache, DfModeDefault)
-                Err(f) => println(f.message())
-                Ok(dir) =>
-                    println(dir)
-                    println(dfapp.config_file(e, me, "config.toml"))
-```
-
-On Linux with an ordinary home directory that prints
-`/home/ada/.cache/novo` and `/home/ada/.config/novo/config.toml`; on
-macOS `/Users/ada/Library/Caches/org.novo-lang.novo` and
-`/Users/ada/Library/Application Support/org.novo-lang.novo/config.toml`;
-on Windows `C:\Users\ada\AppData\Local\novo-lang\novo` and
-`C:\Users\ada\AppData\Roaming\novo-lang\novo\config.toml`.
-
-## The load-bearing interface: `DfEnv`, the environment read once
-
-```novo ignore
-pub struct DfEnv
-    platform: dfplat.DfPlatform
-    home: Str
-    values: [(Str, Str)]
-
-pub fn capture() -> DfEnv [io]
-pub fn of(p: dfplat.DfPlatform, home: Str, values: [(Str, Str)]) -> DfEnv []
-```
-
-`capture` is the whole `[io]` surface a program has to touch.  Every
-directory — `dfbase.config_dir`, `dfapp.cache_file`, `dfnovo.bin` — is
-`[]` arithmetic over the value it returns.  Three things follow, and
-they are why the design is worth the extra call.
-
-**The platform table is testable on any machine.**  `of(DfWindows,
-"C:/Users/ada", pairs)` builds an environment no machine in this
-project has, and `tests/dfbase_tests.nv` then asserts the Windows
-column — cell by cell, on every commit, on a Linux runner.  `directories`
-and `platformdirs` both read the environment *inside* each accessor, so
-their macOS column is checked on the day somebody has a Mac and their
-Windows column is checked by their users.  That is the difference this
-package exists to make, and it is worth one line at startup.
-
-**The answers are consistent.**  A program that calls `config_dir` and
-then `cache_dir` against a live environment can be handed answers from
-two different environments — a `setenv` between them, a plugin that
-changed a variable.  One snapshot makes that impossible, and it makes
-the whole layout one value a program can log, print, or hand to a
-subprocess.
-
-**The cost is one pass.**  `capture` reads at most eleven variables plus
-the home directory and the platform name.  The per-accessor shape reads
-one or two variables *per call*, so a program with twelve accessors
-reads the environment twelve times.
-
-### The second decision: `""` means "there is no such directory"
-
-Nothing in the read path returns a `Result` or an optional.  Every
-accessor answers a `Str`, and `""` means the directory does not exist as
-a concept here.  `dfbase.source_of` says which of six reasons applies:
-
-| source | what happened |
+| Role | What goes in it |
 | --- | --- |
-| `DfFromOverride(name)` | a variable set it, and it is named |
-| `DfFromDefault` | the platform's default under the home directory |
-| `DfOverrideRejected(name)` | a variable set it and was **ignored** — it is not absolute |
-| `DfNoHome` | no home directory to hang a default off |
-| `DfNoDefault` | the platform carries the role but defines no fallback (`XDG_RUNTIME_DIR`) |
-| `DfRoleAbsent` | this platform has no such directory (runtime on macOS) |
+| `DfConfig` | Configuration a person edits. It roams between machines on Windows. |
+| `DfConfigLocal` | Configuration that must not roam: a path, a machine identifier, a socket name. |
+| `DfData` | Data the program produced and wants kept. |
+| `DfDataLocal` | Data that must not roam: an index, a compiled artifact. |
+| `DfCache` | Data the program can recompute. Anything may delete it. |
+| `DfState` | State between runs: a history file, a last-session record. |
+| `DfRuntime` | Sockets and pid files, emptied at logout. Linux only. |
+| `DfLog` | Log files. |
+| `DfPreference` | macOS's `Library/Preferences`, which is not its application-support directory. |
+| `DfExecutable` | Where a user-installed program goes. Linux only. |
 
-The standard library set the precedent: `env.home()` answers `""` rather
-than `?Str`, "because there is nothing a caller does differently about
-it".  A package where twelve accessors each returned an optional pushes
-a `??` into every call site and each one spells the fallback
-differently.  A package that answered a *relative* path instead is the
-defect where a service account with no `HOME` writes its configuration
-into whatever directory it was started in.
+Two tables decide every answer. The **override table** says which
+environment variable sets a role on a platform. The **default table**
+says where the role goes under the home directory when no variable
+does. `dfplat.override_variable` and `dfplat.default_suffix` are those
+two tables; the rows below are the ones the test suite asserts cell by
+cell.
 
-### Three rules almost nothing implements
+On Linux, and on any other system this package does not recognise:
 
-**A relative override is ignored.**  The XDG specification says so
-outright, and `XDG_CONFIG_HOME=.config` is a thing people type into a
-shell profile.  Honouring it puts a program's configuration under
-whatever directory it was started in, and the configuration vanishes the
-next time it starts somewhere else.  `dfenv.override_is_usable` is that
-rule, `DfOverrideRejected` reports it, and it is checked per platform —
-`/srv/data` is absolute on Linux and is **not** absolute on Windows,
-where it names no drive.
+| Role | Variable | Default under the home directory |
+| --- | --- | --- |
+| Config | `XDG_CONFIG_HOME` | `.config` |
+| Config, local | `XDG_CONFIG_HOME` | `.config` |
+| Data | `XDG_DATA_HOME` | `.local/share` |
+| Cache | `XDG_CACHE_HOME` | `.cache` |
+| State | `XDG_STATE_HOME` | `.local/state` |
+| Log | `XDG_STATE_HOME` | `.local/state` |
+| Runtime | `XDG_RUNTIME_DIR` | none |
+| Executable | none | `.local/bin` |
 
-**An empty variable is unset.**  `XDG_DATA_HOME=` is the specification's
-"unset", not an empty path.
+On macOS, where no role has an environment variable of its own:
 
-**`XDG_RUNTIME_DIR` has no fallback.**  The specification gives none, and
-the two obvious inventions are both wrong: `/tmp` is world-writable, so
-another user can replace the socket; the cache directory is not emptied
-at logout, so the pid file outlives the session.  This answers `""` and
-`DfNoDefault`, and a program that needs a socket chooses in its own
-code, where the decision is visible.
+| Role | Default under the home directory |
+| --- | --- |
+| Config | `Library/Application Support` |
+| Cache | `Library/Caches` |
+| Log | `Library/Logs` |
+| Preference | `Library/Preferences` |
+| Runtime, executable | absent |
 
-### The project path is the fact a naive port gets wrong
+On Windows:
 
-Given the qualifier `org`, the organization `novo-lang` and the
-application `novo`:
+| Role | Variable | Default under the profile |
+| --- | --- | --- |
+| Config | `APPDATA` | `AppData\Roaming` |
+| Config, local | `LOCALAPPDATA` | `AppData\Local` |
+| Cache | `LOCALAPPDATA` | `AppData\Local` |
+| Runtime, executable | absent | absent |
 
-| platform | project path |
+The environment is read **once**, into a `DfEnv` value, by
+`dfenv.capture`. That is the only function a program has to call that
+touches the machine. Every directory is then a `[]` function over that
+value, so the answers are consistent with each other and the whole
+layout is one value a program can print, log or hand to a subprocess.
+
+A `DfEnv` can also be built by hand with `dfenv.of`, naming the
+platform, the home directory and the variables. A test on a Linux
+machine can therefore assert the macOS and Windows columns.
+
+A **project path** is the part of a directory that belongs to one
+program. It is spelled differently on each platform, from a
+**qualifier**, an **organization** and an **application** name.
+
+| Platform | Project path for `org`, `novo-lang`, `novo` |
 | --- | --- |
 | Linux | `novo` |
 | macOS | `org.novo-lang.novo` |
 | Windows | `novo-lang\novo` |
 
-A port that used the application name on all three writes a macOS
-directory the platform's own tools do not recognise, and a Windows
-directory that collides with any other vendor's program of the same
-name.  `dfapp.project_path` is that table, it is `[]`, and all three
-rows are asserted in `tests/dfapp_tests.nv`.
-
-Names are **checked and sanitised**, both.  `dfapp.check` refuses a name
-with a separator, a `.` or a `..` in it, and a program calls it once at
-startup where the message can name the manifest field that is wrong.
-The joins sanitise anyway, so the failure mode of skipping `check` is a
-strange directory name and never an escape.  One without the other is a
-guard that gets bypassed, or a silence.
-
-### `dfmake` verifies the mode it asked for
-
-`DfModePrivate` does not merely request `0700`; it creates the directory
-and then **reads back** the mode, answering `DfModeTooWide(path, wanted,
-found)` when a umask or an inherited parent produced something wider.
-A caller that wrote a token into a directory it believed was private has
-no way to discover otherwise afterwards, so the check belongs here.
-
-On Windows there are no POSIX mode bits and this package does not read
-ACLs, so `DfModePrivate` is `DfModeUnsupported` — a refusal rather than
-a silent success, because telling a credential store its secret is
-protected on the one platform where it is not is the worst of the
-available answers.
-
-Nothing in this package deletes.  A directories library that could
-remove a tree is a directories library that could remove the wrong tree;
-`tempdir-nv` owns removal, behind a root value that says what it is
-entitled to delete.
-
-## The worked example: the novo toolchain's own layout
-
-`novo` does **not** follow XDG, and `dfnovo` is the honest example a
-directories library ought to carry — one that shows the rule and shows a
-program that does not follow it, with the reason written down.
+## Install
 
 ```
-$NOVO_HOME  (default ~/.novo)
-├── bin                → current/bin          on PATH
-├── current            → versions/<version>
-├── versions/<version>                        one unpacked release each
-├── lib                                       runtime sources
-└── cache
-    ├── registry/<host>/<name>/<version>      fetched package sources
-    └── rt-obj                                compiled runtime objects
+novo pkg add datafile-nv
 ```
 
-Everything lives under one root because a person must be able to move,
-copy or delete an installation by moving, copying or deleting one
-directory — and because the installer's relative symbolic links stop
-being relative the moment the tree is split across `~/.config`,
-`~/.cache` and `~/.local/share`.
+## Example
 
-`dfnovo.xdg_would_be` answers where each part *would* live under the
-conventions, so the decision not to is visible and checkable rather than
-implicit, and so the table exists on the day the toolchain moves.
+```novo
+use dfenv
+use dfapp
+use dfmake
 
-## The layer, and why
+fn main() [io, fs]
+    // Read the environment once. Every directory below is arithmetic
+    // over the value this returns.
+    let e = dfenv.capture()
 
-`host`, and two effects only.
+    // Name the program. All three parts are used, because the three
+    // platforms spell a project's directory differently.
+    let me = dfapp.qualified("org", "novo-lang", "novo")
 
-`[io]` is the **environment** — `env.os`, `env.home`, `env.get`.  SPEC
-§ 5.1 puts the environment under `[io]` alongside pipes and processes;
-there is no `[env]` label to declare, and a package that wanted one
-would still be charged `[io]`.  It appears on exactly three functions:
-`dfplat.current_platform`, `dfenv.capture` and `dfenv.capture_for`.
+    match dfapp.check(me)
+        // One of the three names is not a usable path component.
+        Some(f) => println(dfenv.fault_message(f))
+        None    =>
+            // Create this program's cache directory and answer its path.
+            match dfmake.ensure_app_dir(e, me, DfCache, DfModeDefault)
+                Err(f)   => println(dfenv.fault_message(f))
+                Ok(dir)  =>
+                    println(dir)
+                    // Where a configuration file of this name would go.
+                    println(dfapp.config_file(e, me, "config.toml"))
+```
 
-`[fs]` is the disk, and it appears in exactly two places: the three
-functions in `dfuser` that read `user-dirs.dirs`, and `dfmake`.
+On Linux with an ordinary home directory that prints
+`/home/ada/.cache/novo` and `/home/ada/.config/novo/config.toml`. On
+macOS it prints `/Users/ada/Library/Caches/org.novo-lang.novo` and
+`/Users/ada/Library/Application Support/org.novo-lang.novo/config.toml`.
+On Windows it prints `C:\Users\ada\AppData\Local\novo-lang\novo` and
+`C:\Users\ada\AppData\Roaming\novo-lang\novo\config.toml`.
 
-Everything else — `dfplat`, `dfbase`, `dfapp`, `dfnovo`, and the parse
-and default halves of `dfuser` — is `[]`.  That is not a technicality:
-it is the reason the whole platform table can be asserted from a test
-with no environment, no home directory and no disk.
+Build and test with `novo pkg build` and `novo test`. Today `novo test`
+fails on purpose: every test reaches a `not implemented:
+datafile-nv.<module>.<fn>` panic. The tests are the specification the
+implementation will have to satisfy.
 
-No dependencies.  A package that answers "where does my configuration
-live" is depended on by configuration readers, loggers and installers
-alike, and every dependency it took would be one they all pay for.
+## What the package contains
 
-## What it does not do
-
-- **No Windows registry.**  The user directories (Documents, Downloads)
-  are stored in the registry there, and this package answers the default
-  under `%USERPROFILE%` instead.  `dfuser.default_user_dir` is the
-  honest name for what it is doing.  A `winreg-nv` row is what would
-  fix it.
-- **No `~` expansion and no `realpath`.**  Paths are returned as the
-  environment gave them.  `/tmp` is a symbolic link to `/private/tmp` on
-  macOS, and a package that resolved one path and not another would hand
-  a caller two strings that name the same directory and do not compare
-  equal.
-- **No `UserDirs` for other users.**  Every answer is about the process's
-  own environment.
-- **No deletion, no writing of files** — only directory creation.
-
-## The reference implementation
-
-[directories](https://docs.rs/directories) 5.x for the role set, the
-project path and the platform tables; `directories`' own
-`BaseDirs`/`ProjectDirs` split is where `dfbase` and `dfapp` come from.
-[platformdirs](https://platformdirs.readthedocs.io) for the version
-component, the log directory and the site-wide directories, which
-`directories` does not carry.  The [XDG Base Directory
-Specification](https://specifications.freedesktop.org/basedir-spec/) is
-the authority for the Linux column, including the two rules above that
-both references skip.
-
-## Status
-
-Every body is `todo()`.  The interface is **122 `pub` items across seven
-modules** — 3 structs, 6 enums and 113 functions, plus one `impl Error`:
-
-| module | surface |
+| Module | Contents |
 | --- | --- |
-| `dfplat` | 3 enums, 14 functions |
-| `dfenv` | 1 struct, 1 enum, 16 functions, `impl Error for DfFault` |
-| `dfbase` | 19 functions, all `[]` |
-| `dfapp` | 1 struct, 24 functions |
-| `dfuser` | 1 enum, 11 functions |
-| `dfmake` | 1 enum, 14 functions |
-| `dfnovo` | 1 struct, 15 functions |
+| `dfplat` | The platform, the roles, the two tables, and the path arithmetic each platform needs: its separator, its join and its rule for an absolute path. |
+| `dfenv` | `DfEnv`, the environment read once, the builders that make one by hand, and every fault this package can answer. |
+| `dfbase` | The directories of the person running the program, as functions over a `DfEnv`. |
+| `dfapp` | `DfApp`, the project path, and the same directories with this program's own folder inside them. |
+| `dfuser` | Documents, Downloads, Pictures and the other directories a desktop gives a person, and the one file this package reads. |
+| `dfmake` | The half that touches the disk: create a directory, check one exists, and verify its mode. |
+| `dfnovo` | The novo toolchain's own layout under `NOVO_HOME`, as a worked example of a program that does not follow the conventions. |
 
-Effect rows across the whole package: `[io]` on three functions, `[fs]`
-on sixteen, and `[]` on the other ninety-four.
+## How to choose an entry point
+
+**`dfbase` answers the person's directories.** `dfbase.config_dir` is
+`/home/ada/.config`. Use it when you want the directory itself, or when
+you are placing something that is not a program's private folder.
+
+**`dfapp` answers this program's directories.** `dfapp.config_dir` is
+`/home/ada/.config/novo`, with the project path already appended. Use
+it for everything a program owns. `dfapp.config_file` adds a file name
+on the end.
+
+**`dfmake` is the only module that touches the disk.** Nothing in
+`dfbase` or `dfapp` creates anything; they compute paths.
+
+**`dfplat` is the tables themselves.** A program printing "your
+configuration lives here because this variable is set" reads
+`dfplat.override_variable` and `dfbase.source_of`.
+
+## The rules a user needs
+
+1. **`dfenv.capture` is the only environment read.** It is one of three
+   functions in the package that declares `[io]`, together with
+   `dfenv.capture_for` and `dfplat.current_platform`. Everything in
+   `dfbase`, `dfapp`, `dfnovo` and the arithmetic half of `dfuser`
+   declares nothing at all.
+2. **An empty string means there is no such directory.** No read
+   answers a `Result` or an optional. `dfbase.source_of` says which of
+   six reasons applies, so a caller can tell "your platform has no
+   runtime directory" from "you have no home directory".
+
+   | Source | What happened |
+   | --- | --- |
+   | `DfFromOverride(name)` | A variable set it, and it is named. |
+   | `DfFromDefault` | The platform's default under the home directory. |
+   | `DfOverrideRejected(name)` | A variable set it and was ignored, because it is not absolute. |
+   | `DfNoHome` | No home directory to hang a default off. |
+   | `DfNoDefault` | The platform carries the role and defines no fallback. |
+   | `DfRoleAbsent` | This platform has no such directory. |
+
+3. **A relative override is ignored.** The XDG Base Directory
+   Specification requires it, and `XDG_CONFIG_HOME=.config` is a thing
+   people type into a shell profile. Honouring it would put a program's
+   configuration under whatever directory it was started in.
+   `dfenv.override_is_usable` is the rule and `DfOverrideRejected`
+   reports it.
+4. **Absoluteness is decided by the platform.** `/srv/data` is absolute
+   on Linux and is not absolute on Windows, where it names no drive.
+   Windows's absolute forms are `C:\...`, `C:/...` and
+   `\\server\share`. `dfplat.is_absolute` is that predicate.
+5. **An empty variable is unset.** `XDG_DATA_HOME=` is the
+   specification's "unset" and not an empty path. `dfenv.is_set`
+   preserves the distinction.
+6. **`XDG_RUNTIME_DIR` has no fallback.** The specification gives none.
+   `/tmp` is world-writable, so another user could replace the socket,
+   and the cache directory is not emptied at logout, so a pid file
+   would outlive the session. Unset, `dfbase.runtime_dir` answers the
+   empty string and `source_of` answers `DfNoDefault`.
+7. **The runtime and executable roles are absent on macOS and
+   Windows.** `dfplat.role_is_absent` answers which, and
+   `dfmake.ensure_app_dirs` skips a role the platform does not carry
+   rather than refusing the whole call.
+8. **A log goes in the state directory on Linux and in
+   `Library/Logs` on macOS.** It is not the cache, which anything may
+   delete.
+9. **Check a program's name once, at startup.** `dfapp.check` refuses a
+   qualifier, organization or application that is empty, is `.` or
+   `..`, or contains a separator. The joins sanitise the name anyway,
+   so skipping the check gives a strange directory name and never an
+   escape from the parent.
+10. **An unrecognised platform reads the XDG column.**
+    `dfplat.platform_of` answers `DfOther` for anything that is not
+    Linux, macOS or Windows, which is the right guess for every other
+    Unix.
+11. **`DfModePrivate` is verified and not merely requested.**
+    `dfmake.ensure_dir` creates the directory, reads the mode back, and
+    answers `DfModeTooWide(path, wanted, found)` when a umask or an
+    inherited parent produced something wider.
+12. **`DfModePrivate` is refused on Windows.** There are no POSIX mode
+    bits there and this package does not read access control lists, so
+    it answers `DfModeUnsupported`. Telling a credential store that its
+    secret is protected on the one platform where it is not would be
+    the worst available answer.
+13. **Nothing here deletes anything.** The package creates directories
+    and writes no files. A directories library that could remove a tree
+    is a directories library that could remove the wrong tree.
+14. **Paths come back as the environment gave them.** There is no `~`
+    expansion and no resolution of symbolic links. `/tmp` is a link to
+    `/private/tmp` on macOS, and resolving one path and not another
+    would hand a caller two strings that name one directory and do not
+    compare equal.
+15. **`dfbase.config_search_path` is the list a layered configuration
+    reader wants**, the person's directory first and the site's after
+    it. `$XDG_CONFIG_DIRS` supplies the site's, split on `:`, and
+    `/etc/xdg` is the default.
+
+16. **The novo toolchain does not follow these conventions, and
+    `dfnovo` is that layout.** Everything lives under one root,
+    `$NOVO_HOME`, which defaults to `~/.novo`, so that an installation
+    can be moved, copied or deleted by moving, copying or deleting one
+    directory.
+
+    | Part | Path under the root |
+    | --- | --- |
+    | Executables on the PATH | `bin`, a link to `current/bin` |
+    | The selected release | `current`, a link to `versions/<version>` |
+    | Every unpacked release | `versions/<version>` |
+    | Runtime sources | `lib` |
+    | Fetched package sources | `cache/registry/<host>/<name>/<version>` |
+    | Compiled runtime objects | `cache/rt-obj` |
+
+    `dfnovo.xdg_would_be` answers where each part would live under the
+    conventions, so the decision not to follow them is checkable rather
+    than implicit.
+
+## What is not included
+
+- **The Windows registry.** Documents and Downloads are stored there,
+  and this package answers the default under `%USERPROFILE%` instead.
+  `dfuser.default_user_dir` is the honest name for what it does.
+- **Other users' directories.** Every answer is about the environment
+  of the process asking.
+- **Deleting anything, and writing any file.** See rule 13. Only
+  directory creation is here.
+- **Path resolution.** See rule 14.
+- **A runtime directory where the platform has none.** See rule 6.
+- **A dependency of any kind.** A package that answers where
+  configuration lives is depended on by configuration readers, loggers
+  and installers alike, and every dependency it took would be one they
+  all pay for.
+
+## Related packages
+
+- [config-nv](https://novo-lang.org/packages/config-nv) stacks
+  configuration from several sources in precedence order. It takes a
+  list of directories, which is what `dfbase.config_search_path`
+  answers. This package says where the files are; that one decides
+  which value wins.
+- [toml-nv](https://novo-lang.org/packages/toml-nv),
+  [yaml-nv](https://novo-lang.org/packages/yaml-nv),
+  [ini-nv](https://novo-lang.org/packages/ini-nv) and
+  [dotenv-nv](https://novo-lang.org/packages/dotenv-nv) read the files
+  that live in these directories.
+- `std.env` in the standard library answers one variable, the home
+  directory and the operating system name. It is what `dfenv.capture`
+  calls. `std.fs` is what `dfmake` calls.
+
+## Tests
+
+```bash
+novo test tests/dfplat_tests.nv     # 11 tests: the two tables, the joins, absoluteness
+novo test tests/dfbase_tests.nv     # 12 tests: the three platform columns
+novo test tests/dfapp_tests.nv      # 11 tests: the project path and the name rules
+novo test tests/dfuser_tests.nv     # 12 tests: user-dirs.dirs and the defaults
+novo test tests/dfmake_tests.nv     # 12 tests: the modes and the environment value
+novo test tests/dfnovo_tests.nv     # 10 tests: the toolchain layout
+```
+
+The expected paths are `directories` 5.x's platform tables, the XDG
+Base Directory Specification for the Linux column, and `platformdirs`
+for the log directory, the version component and the site-wide
+directories.
+
+No test reads the environment, a home directory or a disk. Every suite
+builds its own `DfEnv` with `dfenv.of`, so the macOS column and the
+Windows column are asserted cell by cell on a Linux machine. The suite
+checks that a relative override is rejected and named, that an empty
+variable is unset, that the runtime directory has no invented fallback,
+that a join produces exactly one separator and never a leading one,
+that a Windows path is absolute only with a drive or a share, that the
+project path is spelled three different ways, and that a name with a
+separator in it is refused.
+
+The tests compile today and fail at run, each on the `not implemented`
+panic that is its body. That is the expected state of an interface
+release. They turn green one at a time as bodies land.
+
+## Implementation status
+
+Nothing is implemented. Every function listed here is declared with its
+signature and its effect row, and every body is a `todo()`.
+
+| Module | Surface | Implemented |
+| --- | --- | --- |
+| `dfplat` | 3 enums, 14 functions | no |
+| `dfenv` | 1 struct, 1 enum, 16 functions, `impl Error for DfFault` | no |
+| `dfbase` | 19 functions | no |
+| `dfapp` | 1 struct, 24 functions | no |
+| `dfuser` | 1 enum, 11 functions | no |
+| `dfmake` | 1 enum, 14 functions | no |
+| `dfnovo` | 1 struct, 15 functions | no |
+
+Effect rows across the package: `[io]` on three functions, `[fs]` on
+sixteen, and nothing at all on the rest.
+
+## Licence
+
+Apache-2.0. See `LICENSE`.
+
+<!-- docs/writing-a-readme.md is the style guide for this page. -->
