@@ -89,6 +89,8 @@ seven suites are green, and the interface release's stamps are gone.
   `default_user_dir` answers a font directory before the table is
   consulted.
 
+This release requires novo 0.23.0 or later.
+
 ## 0.0.2 — 2026-09-15
 
 README rewritten to the package README style guide (docs/writing-a-readme.md); no change to the interface.
