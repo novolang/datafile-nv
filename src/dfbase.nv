@@ -1,8 +1,6 @@
 // dfbase.nv — the base directories: one lookup in `dfplat`'s two
 // tables, then one join.
 //
-// Every body here is a `todo()`; the signatures are the design.
-//
 // EVERY FUNCTION IN THIS MODULE IS `[]`.  The environment was read
 // once into the `DfEnv`; nothing here reads it again, nothing here
 // touches the disk, and nothing here can fail.  That is the half of a
@@ -36,6 +34,19 @@
 use dfenv
 use dfplat
 
+// The platform's own path for a role, or `""` when there is nothing
+// to build one from.
+//
+// A role with no default and a snapshot with no home are the same
+// answer here and different answers in `source_of`, which is where a
+// caller that cares about the difference looks.
+fn fallback_dir(e: dfenv.DfEnv, r: dfplat.DfRole) -> Str
+    let p = dfenv.platform(e)
+    let suffix = dfplat.default_suffix(p, r)
+    if suffix == "" or dfenv.home(e) == ""
+        return ""
+    dfplat.join(p, dfenv.home(e), suffix)
+
 // The directory a role resolves to in this environment, or `""`.
 //
 // The one function; everything else in this module is a call to it
@@ -49,7 +60,13 @@ use dfplat
 //     println(dfbase.base_dir(dfenv.bare(DfLinux, "/home/ada"), DfCache))
 // ```
 pub fn base_dir(e: dfenv.DfEnv, r: dfplat.DfRole) -> Str []
-    todo("datafile-nv.dfbase.base_dir")
+    let p = dfenv.platform(e)
+    match source_of(e, r)
+        DfFromOverride(name)  =>
+            dfplat.to_platform(p, dfenv.variable(e, name))
+        DfFromDefault         => fallback_dir(e, r)
+        DfOverrideRejected(_) => fallback_dir(e, r)
+        _                     => ""
 
 // Why `base_dir` answered what it answered.
 //
@@ -63,7 +80,19 @@ pub fn base_dir(e: dfenv.DfEnv, r: dfplat.DfRole) -> Str []
 //     println(dfplat.source_name(dfbase.source_of(e, DfRuntime)))
 // ```
 pub fn source_of(e: dfenv.DfEnv, r: dfplat.DfRole) -> dfplat.DfSource []
-    todo("datafile-nv.dfbase.source_of")
+    let p = dfenv.platform(e)
+    if dfplat.role_is_absent(p, r)
+        return DfRoleAbsent
+    let name = dfplat.override_variable(p, r)
+    if name != "" and dfenv.is_set(e, name)
+        if dfenv.override_is_usable(e, name)
+            return DfFromOverride(name: name)
+        return DfOverrideRejected(name: name)
+    if dfplat.default_suffix(p, r) == ""
+        return DfNoDefault
+    if dfenv.home(e) == ""
+        return DfNoHome
+    DfFromDefault
 
 // True when this environment has a directory for this role.
 //
@@ -79,7 +108,7 @@ pub fn source_of(e: dfenv.DfEnv, r: dfplat.DfRole) -> dfplat.DfSource []
 //     println("${has}")
 // ```
 pub fn has_base_dir(e: dfenv.DfEnv, r: dfplat.DfRole) -> Bool []
-    todo("datafile-nv.dfbase.has_base_dir")
+    base_dir(e, r) != ""
 
 // Every role paired with the directory it resolves to, in
 // `dfplat.roles` order, roles this platform does not carry included
@@ -97,7 +126,7 @@ pub fn has_base_dir(e: dfenv.DfEnv, r: dfplat.DfRole) -> Bool []
 //     println("${dfbase.layout(dfenv.capture()).len()}")
 // ```
 pub fn layout(e: dfenv.DfEnv) -> [(dfplat.DfRole, Str)] []
-    todo("datafile-nv.dfbase.layout")
+    [(r, base_dir(e, r)) for r in dfplat.roles()]
 
 // The home directory: `$HOME`, `%USERPROFILE%`, or `""`.
 //
@@ -109,7 +138,7 @@ pub fn layout(e: dfenv.DfEnv) -> [(dfplat.DfRole, Str)] []
 //     println(dfbase.home_dir(dfenv.capture()))
 // ```
 pub fn home_dir(e: dfenv.DfEnv) -> Str []
-    todo("datafile-nv.dfbase.home_dir")
+    dfenv.home(e)
 
 // Configuration a person edits.
 //
@@ -124,7 +153,7 @@ pub fn home_dir(e: dfenv.DfEnv) -> Str []
 //     println(dfbase.config_dir(dfenv.bare(DfLinux, "/home/ada")))
 // ```
 pub fn config_dir(e: dfenv.DfEnv) -> Str []
-    todo("datafile-nv.dfbase.config_dir")
+    base_dir(e, DfConfig)
 
 // Configuration that must not roam between machines.
 //
@@ -141,7 +170,7 @@ pub fn config_dir(e: dfenv.DfEnv) -> Str []
 //     println(dfbase.config_local_dir(dfenv.bare(DfWindows, "C:/Users/ada")))
 // ```
 pub fn config_local_dir(e: dfenv.DfEnv) -> Str []
-    todo("datafile-nv.dfbase.config_local_dir")
+    base_dir(e, DfConfigLocal)
 
 // Data the program produced and would like kept.
 //
@@ -156,7 +185,7 @@ pub fn config_local_dir(e: dfenv.DfEnv) -> Str []
 //     println(dfbase.data_dir(dfenv.bare(DfLinux, "/home/ada")))
 // ```
 pub fn data_dir(e: dfenv.DfEnv) -> Str []
-    todo("datafile-nv.dfbase.data_dir")
+    base_dir(e, DfData)
 
 // Data that must not roam: an index, a compiled artifact, anything
 // tied to this machine.
@@ -169,7 +198,7 @@ pub fn data_dir(e: dfenv.DfEnv) -> Str []
 //     println(dfbase.data_local_dir(dfenv.bare(DfWindows, "C:/Users/ada")))
 // ```
 pub fn data_local_dir(e: dfenv.DfEnv) -> Str []
-    todo("datafile-nv.dfbase.data_local_dir")
+    base_dir(e, DfDataLocal)
 
 // Data the program can recompute, and that anything is entitled to
 // delete.
@@ -185,7 +214,7 @@ pub fn data_local_dir(e: dfenv.DfEnv) -> Str []
 //     println(dfbase.cache_dir(dfenv.bare(DfMacos, "/Users/ada")))
 // ```
 pub fn cache_dir(e: dfenv.DfEnv) -> Str []
-    todo("datafile-nv.dfbase.cache_dir")
+    base_dir(e, DfCache)
 
 // State between runs that is neither configuration nor data: a
 // history file, a last-session record, a resume cursor.
@@ -203,7 +232,7 @@ pub fn cache_dir(e: dfenv.DfEnv) -> Str []
 //     println(dfbase.state_dir(dfenv.bare(DfLinux, "/home/ada")))
 // ```
 pub fn state_dir(e: dfenv.DfEnv) -> Str []
-    todo("datafile-nv.dfbase.state_dir")
+    base_dir(e, DfState)
 
 // Where a socket or a pid file goes, emptied when the session ends.
 //
@@ -224,7 +253,7 @@ pub fn state_dir(e: dfenv.DfEnv) -> Str []
 //     println(dfbase.runtime_dir(dfenv.capture()))
 // ```
 pub fn runtime_dir(e: dfenv.DfEnv) -> Str []
-    todo("datafile-nv.dfbase.runtime_dir")
+    base_dir(e, DfRuntime)
 
 // Where log files go.
 //
@@ -241,7 +270,7 @@ pub fn runtime_dir(e: dfenv.DfEnv) -> Str []
 //     println(dfbase.log_dir(dfenv.bare(DfMacos, "/Users/ada")))
 // ```
 pub fn log_dir(e: dfenv.DfEnv) -> Str []
-    todo("datafile-nv.dfbase.log_dir")
+    base_dir(e, DfLog)
 
 // macOS's `~/Library/Preferences`, which is NOT the same place as its
 // application-support directory.
@@ -259,10 +288,9 @@ pub fn log_dir(e: dfenv.DfEnv) -> Str []
 //     println(dfbase.preference_dir(dfenv.bare(DfMacos, "/Users/ada")))
 // ```
 pub fn preference_dir(e: dfenv.DfEnv) -> Str []
-    todo("datafile-nv.dfbase.preference_dir")
+    base_dir(e, DfPreference)
 
-// Where a user-installed executable goes: `$XDG_BIN_HOME` or
-// `~/.local/bin`.
+// Where a user-installed executable goes: `~/.local/bin`.
 //
 // Linux only.  `""` on macOS and Windows, where an executable
 // goes is an installer's decision and not a convention.
@@ -275,7 +303,33 @@ pub fn preference_dir(e: dfenv.DfEnv) -> Str []
 //     println(dfbase.executable_dir(dfenv.bare(DfLinux, "/home/ada")))
 // ```
 pub fn executable_dir(e: dfenv.DfEnv) -> Str []
-    todo("datafile-nv.dfbase.executable_dir")
+    base_dir(e, DfExecutable)
+
+// One of the specification's colon-separated lists, or its default.
+//
+// An empty entry and a relative one are both dropped: the
+// specification says a path in these variables must be absolute, and a
+// list where every entry was invalid is the same as no list at all.
+fn colon_list(p: dfplat.DfPlatform, value: Str, fallback: [Str]) -> [Str]
+    if value == ""
+        return fallback[:]
+    var out: [Str] = []
+    for part in str.split(value, ":")
+        if part != "" and dfplat.is_absolute(p, part)
+            out = list.push(out, part)
+    if out.len() == 0
+        return fallback[:]
+    out
+
+// Windows' one system-wide directory, as a list of one.
+//
+// The variable is in `variable_names` on Windows, and an unset one
+// answers no entry rather than a made-up path.
+fn program_data(e: dfenv.DfEnv) -> [Str]
+    let root = dfenv.variable(e, "PROGRAMDATA")
+    if root == ""
+        return []
+    [dfplat.to_platform(dfenv.platform(e), root)]
 
 // The system-wide configuration directories, highest precedence
 // first.
@@ -294,7 +348,12 @@ pub fn executable_dir(e: dfenv.DfEnv) -> Str []
 //         println(d)
 // ```
 pub fn site_config_dirs(e: dfenv.DfEnv) -> [Str] []
-    todo("datafile-nv.dfbase.site_config_dirs")
+    let p = dfenv.platform(e)
+    if p == DfMacos
+        return ["/Library/Application Support"]
+    if p == DfWindows
+        return program_data(e)
+    colon_list(p, dfenv.variable(e, "XDG_CONFIG_DIRS"), ["/etc/xdg"])
 
 // The system-wide data directories, highest precedence first.
 //
@@ -309,7 +368,13 @@ pub fn site_config_dirs(e: dfenv.DfEnv) -> [Str] []
 //         println(d)
 // ```
 pub fn site_data_dirs(e: dfenv.DfEnv) -> [Str] []
-    todo("datafile-nv.dfbase.site_data_dirs")
+    let p = dfenv.platform(e)
+    if p == DfMacos
+        return ["/Library/Application Support"]
+    if p == DfWindows
+        return program_data(e)
+    colon_list(p, dfenv.variable(e, "XDG_DATA_DIRS"),
+               ["/usr/local/share", "/usr/share"])
 
 // Every directory a configuration file could be read from, in
 // precedence order: the user's first, then the site's.
@@ -328,7 +393,12 @@ pub fn site_data_dirs(e: dfenv.DfEnv) -> [Str] []
 //         println(d)
 // ```
 pub fn config_search_path(e: dfenv.DfEnv) -> [Str] []
-    todo("datafile-nv.dfbase.config_search_path")
+    var out: [Str] = []
+    let user = base_dir(e, DfConfig)
+    if user != ""
+        out = list.push(out, user)
+    list.append(out, site_config_dirs(e))
+    out
 
 // Every directory a data file could be read from, in precedence
 // order.
@@ -342,4 +412,9 @@ pub fn config_search_path(e: dfenv.DfEnv) -> [Str] []
 //         println(d)
 // ```
 pub fn data_search_path(e: dfenv.DfEnv) -> [Str] []
-    todo("datafile-nv.dfbase.data_search_path")
+    var out: [Str] = []
+    let user = base_dir(e, DfData)
+    if user != ""
+        out = list.push(out, user)
+    list.append(out, site_data_dirs(e))
+    out

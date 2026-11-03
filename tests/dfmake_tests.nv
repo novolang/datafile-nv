@@ -1,9 +1,6 @@
 // dfmake_tests.nv — the disk half, and the accessors the other files
 // did not reach.
 //
-// RED ON PURPOSE: every body under `src/` is a `todo()`, so every
-// assertion here reaches `not implemented: datafile-nv.<module>.<fn>`.
-//
 // THE DISK IS TOUCHED UNDER ONE DIRECTORY AND NOWHERE ELSE.  Every
 // `[fs]` assertion below works under `/tmp/novo-datafile-nv-tests`,
 // which is created by the assertions themselves and left behind — this
@@ -50,7 +47,7 @@ fn test_removing_a_variable_answers_a_new_snapshot() [io]
     let unset = dfenv.without_variable(set, "XDG_CACHE_HOME")
 
     test.case("the variable is gone from the new value")
-    test.assert(dfenv.is_set(unset, "XDG_CACHE_HOME") == false)
+    test.assert(not dfenv.is_set(unset, "XDG_CACHE_HOME"))
 
     test.case("and the old value still has it")
     test.assert(dfenv.variable(set, "XDG_CACHE_HOME") == "/fast")
@@ -64,10 +61,10 @@ fn test_override_is_usable_is_the_relative_rule_on_its_own() [io]
     test.assert(dfenv.override_is_usable(abs, "XDG_DATA_HOME"))
 
     test.case("a relative one is not")
-    test.assert(dfenv.override_is_usable(rel, "XDG_DATA_HOME") == false)
+    test.assert(not dfenv.override_is_usable(rel, "XDG_DATA_HOME"))
 
     test.case("an unset one is not usable either")
-    test.assert(dfenv.override_is_usable(abs, "XDG_CACHE_HOME") == false)
+    test.assert(not dfenv.override_is_usable(abs, "XDG_CACHE_HOME"))
 
 @test
 fn test_every_fault_says_which_path_or_name_it_is_about() [io]

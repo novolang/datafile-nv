@@ -1,8 +1,6 @@
 // dfmake.nv — the half that touches the disk: create the directory,
 // and make it private when a secret is going into it.
 //
-// Every body here is a `todo()`; the signatures are the design.
-//
 // EVERY ROW HERE IS `[fs]` AND NOTHING ELSE.  The environment was
 // already read; a `DfEnv` goes in and no variable is consulted again.
 // So a program can hold one snapshot, compute every path with no
@@ -73,17 +71,13 @@ pub enum DfMode
 //     println("${bits}")
 // ```
 pub fn mode_bits(m: DfMode) -> Int []
-    todo("datafile-nv.dfmake.mode_bits")
+    match m
+        DfModeDefault     => -1
+        DfModePrivate     => 0o700
+        DfModeExplicit(b) => b
 
 // The integer a POSIX mode written in octal names: `octal("0700")` is
 // 448.
-//
-// This exists because **novo-lang has no octal integer literal**.  `0x`
-// and `0b` are both spelled; `0o` is a parse error.  A file mode is
-// octal in every reference, every manual page and every `ls -l`, so
-// without this function the only way to write one in a caller's source
-// is `0b111_000_000` or the decimal 448, and both are values a reviewer
-// cannot check against `chmod 700`.
 //
 // A leading `0` is optional and anything that is not three or four
 // octal digits answers `-1`.
@@ -96,7 +90,19 @@ pub fn mode_bits(m: DfMode) -> Int []
 //     println("${bits}")
 // ```
 pub fn octal(text: Str) -> Int []
-    todo("datafile-nv.dfmake.octal")
+    var digits = text
+    if str.starts_with(digits, "0")
+        digits = str.slice(digits, 1, str.len(digits))
+    let n = str.len(digits)
+    if n < 3 or n > 4
+        return -1
+    var value = 0
+    for i in 0..n
+        let ch = str.byte_at_or(digits, i, 0)
+        if ch < '0' or ch > '7'
+            return -1
+        value = value * 8 + (ch - '0')
+    value
 
 // The mode in the octal form a person reads: `0700`, `0755`.
 //
@@ -110,7 +116,14 @@ pub fn octal(text: Str) -> Int []
 //     println(dfmake.mode_octal(dfmake.octal("0700")))
 // ```
 pub fn mode_octal(bits: Int) -> Str []
-    todo("datafile-nv.dfmake.mode_octal")
+    if bits < 0
+        return "-1"
+    var n = bits
+    var text = ""
+    for i in 0..4
+        text = str.from_int(n & 7) + text
+        n = n >> 3
+    text
 
 // True when a mode grants nothing to the group or to others.
 //
@@ -124,7 +137,31 @@ pub fn mode_octal(bits: Int) -> Str []
 //     println("${ok}")
 // ```
 pub fn mode_is_private(bits: Int) -> Bool []
-    todo("datafile-nv.dfmake.mode_is_private")
+    bits >= 0 and (bits & 0o077) == 0
+
+// Apply a mode to a directory and read it back.
+//
+// `wanted` below zero is a caller that asked for no particular mode,
+// and a platform that will not report one answers unsupported rather
+// than success — a credential store told `Ok` on Windows believes a
+// secret is protected on the one platform where it is not.
+fn apply_mode(path: Str, wanted: Int) -> Result<Unit, dfenv.DfFault> [fs]
+    if wanted < 0
+        return Ok(())
+    let found = fs.file_mode(path) ?? -1
+    // cov: skip — runs only on a platform that will not report a mode for a directory this process owns
+    if found < 0
+        return Err(dfenv.DfModeUnsupported(path: path))
+    if found == wanted
+        return Ok(())
+    // cov: skip — runs only on a filesystem that will not take a mode on a directory this process owns
+    if not fs.set_file_mode(path, wanted)
+        return Err(dfenv.DfModeUnsupported(path: path))
+    let after = fs.file_mode(path) ?? -1
+    if after == wanted
+        return Ok(())
+    // cov: skip — runs only on a filesystem that took the call and kept bits other than the ones asked for
+    Err(dfenv.DfModeTooWide(path: path, wanted: wanted, found: after))
 
 // Create a directory and every missing parent, then apply and verify
 // the mode on the leaf.
@@ -149,7 +186,14 @@ pub fn mode_is_private(bits: Int) -> Bool []
 //         Err(f) => println(f.message())
 // ```
 pub fn ensure_dir(path: Str, m: DfMode) -> Result<Unit, dfenv.DfFault> [fs]
-    todo("datafile-nv.dfmake.ensure_dir")
+    if path == ""
+        return Err(dfenv.DfHomeUnknown(role: "requested"))
+    if not fs.exists(path)
+        if not fs.mkdir_all(path)
+            return Err(dfenv.DfCreateFailed(path: path))
+    if not fs.is_dir(path)
+        return Err(dfenv.DfNotADirectory(path: path))
+    apply_mode(path, mode_bits(m))
 
 // Create this program's directory for a role, and answer the path.
 //
@@ -170,7 +214,15 @@ pub fn ensure_dir(path: Str, m: DfMode) -> Result<Unit, dfenv.DfFault> [fs]
 // ```
 pub fn ensure_app_dir(e: dfenv.DfEnv, a: dfapp.DfApp, r: dfplat.DfRole,
                       m: DfMode) -> Result<Str, dfenv.DfFault> [fs]
-    todo("datafile-nv.dfmake.ensure_app_dir")
+    let dir = dfapp.app_dir(e, a, r)
+    let p = dfenv.platform(e)
+    if dir == ""
+        if dfplat.role_is_absent(p, r)
+            return Err(dfenv.DfNoSuchRole(role: dfplat.role_name(r),
+                                          platform: dfplat.platform_name(p)))
+        return Err(dfenv.DfHomeUnknown(role: dfplat.role_name(r)))
+    ensure_dir(dir, m)!
+    Ok(dir)
 
 // Create this program's directory for each of several roles, and
 // answer the paths in the order asked.
@@ -197,7 +249,14 @@ pub fn ensure_app_dir(e: dfenv.DfEnv, a: dfapp.DfApp, r: dfplat.DfRole,
 // ```
 pub fn ensure_app_dirs(e: dfenv.DfEnv, a: dfapp.DfApp, roles: [dfplat.DfRole],
                        m: DfMode) -> Result<[Str], dfenv.DfFault> [fs]
-    todo("datafile-nv.dfmake.ensure_app_dirs")
+    let p = dfenv.platform(e)
+    var out: [Str] = []
+    for r in roles
+        if dfplat.role_is_absent(p, r)
+            continue
+        let dir = ensure_app_dir(e, a, r, m)!
+        out = list.push(out, dir)
+    Ok(out)
 
 // Create the parent directory of a file path, so a write to it can
 // succeed.
@@ -217,7 +276,9 @@ pub fn ensure_app_dirs(e: dfenv.DfEnv, a: dfapp.DfApp, roles: [dfplat.DfRole],
 //         Err(f) => println(f.message())
 // ```
 pub fn ensure_parent(file_path: Str, m: DfMode) -> Result<Unit, dfenv.DfFault> [fs]
-    todo("datafile-nv.dfmake.ensure_parent")
+    if file_path == ""
+        return Err(dfenv.DfHomeUnknown(role: "requested"))
+    ensure_dir(path.dirname(file_path), m)
 
 // True when the path exists and is a directory.
 //
@@ -229,7 +290,7 @@ pub fn ensure_parent(file_path: Str, m: DfMode) -> Result<Unit, dfenv.DfFault> [
 //     println("${there}")
 // ```
 pub fn dir_exists(path: Str) -> Bool [fs]
-    todo("datafile-nv.dfmake.dir_exists")
+    fs.is_dir(path)
 
 // The POSIX mode of an existing directory, or `-1` when it does not
 // exist or the platform will not say.
@@ -241,7 +302,9 @@ pub fn dir_exists(path: Str) -> Bool [fs]
 //     println(dfmake.mode_octal(dfmake.dir_mode("/tmp")))
 // ```
 pub fn dir_mode(path: Str) -> Int [fs]
-    todo("datafile-nv.dfmake.dir_mode")
+    if not fs.is_dir(path)
+        return -1
+    fs.file_mode(path) ?? -1
 
 // True when an existing directory grants nothing to the group or to
 // others.
@@ -262,7 +325,7 @@ pub fn dir_mode(path: Str) -> Int [fs]
 //     println("${ok}")
 // ```
 pub fn dir_is_private(path: Str) -> Bool [fs]
-    todo("datafile-nv.dfmake.dir_is_private")
+    mode_is_private(dir_mode(path))
 
 // Tighten an existing directory to `0700`.
 //
@@ -279,7 +342,9 @@ pub fn dir_is_private(path: Str) -> Bool [fs]
 //         Err(f) => println(f.message())
 // ```
 pub fn make_private(path: Str) -> Result<Unit, dfenv.DfFault> [fs]
-    todo("datafile-nv.dfmake.make_private")
+    if path == "" or not fs.is_dir(path)
+        return Err(dfenv.DfNotADirectory(path: path))
+    apply_mode(path, mode_bits(DfModePrivate))
 
 // The first path in a list that exists, or `""`.
 //
@@ -296,7 +361,10 @@ pub fn make_private(path: Str) -> Result<Unit, dfenv.DfFault> [fs]
 //     println(dfmake.first_existing(c))
 // ```
 pub fn first_existing(paths: [Str]) -> Str [fs]
-    todo("datafile-nv.dfmake.first_existing")
+    for p in paths
+        if fs.exists(p)
+            return p
+    ""
 
 // Every path in a list that exists, in the order given.
 //
@@ -313,4 +381,8 @@ pub fn first_existing(paths: [Str]) -> Str [fs]
 //     println("${dfmake.existing(c).len()}")
 // ```
 pub fn existing(paths: [Str]) -> [Str] [fs]
-    todo("datafile-nv.dfmake.existing")
+    var out: [Str] = []
+    for p in paths
+        if fs.exists(p)
+            out = list.push(out, p)
+    out

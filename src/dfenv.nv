@@ -1,8 +1,6 @@
 // dfenv.nv — THE LOAD-BEARING INTERFACE: the environment read once,
 // into a value.
 //
-// Every body here is a `todo()`; the signatures are the design.
-//
 // A `DfEnv` is a snapshot: the platform, the home directory, and the
 // handful of variables this package's tables mention.  `capture` reads
 // it — the only `[io]` a program has to perform — and every directory
@@ -109,6 +107,22 @@ pub enum DfFault
     // rather than believe a directory is private.
     DfModeUnsupported(path: Str)
 
+// A mode written the way every reference writes one: four octal
+// digits.
+//
+// It lives here rather than in `dfmake` because a fault's message is
+// where a mode is read by a person, and `dfmake` depends on this
+// module rather than the other way round.
+fn octal_text(bits: Int) -> Str
+    if bits < 0
+        return "${bits}"
+    var n = bits
+    var text = ""
+    for i in 0..4
+        text = str.from_int(n & 7) + text
+        n = n >> 3
+    text
+
 // The sentence a `Result<_, DfFault>` carries.
 //
 // SPEC § 3.4 admits a type as a `Result`'s error type only when it
@@ -126,9 +140,22 @@ pub enum DfFault
 //     println(dfenv.fault_message(DfCreateFailed("/var/lib/app")))
 // ```
 impl Error for DfFault
-    // Panics with `not implemented` until the bodies land.
     fn message(self) -> Str
-        todo("datafile-nv.dfenv.DfFault.message")
+        match self
+            DfNameNotAComponent(name)          =>
+                "${name} is not a usable path component"
+            DfNoSuchRole(role, platform)       =>
+                "${platform} has no ${role} directory"
+            DfHomeUnknown(role)                =>
+                "no home directory for the ${role} directory"
+            DfCreateFailed(path)               =>
+                "could not create ${path}"
+            DfNotADirectory(path)              =>
+                "${path} is not a directory"
+            DfModeTooWide(path, wanted, found) =>
+                "${path} is ${octal_text(found)}, and ${octal_text(wanted)} was required"
+            DfModeUnsupported(path)            =>
+                "this platform cannot set a mode on ${path}"
 
 // The same sentence as a free function, for a caller holding a fault
 // it is not returning.
@@ -140,7 +167,7 @@ impl Error for DfFault
 //     println(dfenv.fault_message(DfHomeUnknown("config")))
 // ```
 pub fn fault_message(f: DfFault) -> Str []
-    todo("datafile-nv.dfenv.fault_message")
+    f.message()
 
 // Every variable name this package reads on a platform, in a stable
 // order.
@@ -161,7 +188,82 @@ pub fn fault_message(f: DfFault) -> Str []
 //         println(name)
 // ```
 pub fn variable_names(p: dfplat.DfPlatform) -> [Str] []
-    todo("datafile-nv.dfenv.variable_names")
+    if p == DfMacos
+        return ["HOME"]
+    if p == DfWindows
+        return ["APPDATA", "LOCALAPPDATA", "USERPROFILE", "PROGRAMDATA"]
+    ["XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME",
+     "XDG_STATE_HOME", "XDG_RUNTIME_DIR", "XDG_CONFIG_DIRS",
+     "XDG_DATA_DIRS", "HOME"]
+
+// The variable that holds the home directory on a platform.
+//
+// `HOME` everywhere but Windows, which spells the same thing
+// `USERPROFILE`.  It is in `variable_names`, so naming it costs no
+// read the capture was not already making.
+fn home_variable(p: dfplat.DfPlatform) -> Str
+    if p == DfWindows
+        "USERPROFILE"
+    else
+        "HOME"
+
+// A path with no trailing separator.
+//
+// Every join would otherwise produce a doubled one, and the home
+// directory is the one path that arrives from outside the package.
+fn trimmed(path: Str) -> Str
+    var n = str.len(path)
+    while n > 1
+        let ch = str.byte_at_or(path, n - 1, 0)
+        if ch != 47 and ch != 92
+            break
+        n = n - 1
+    str.slice(path, 0, n)
+
+// Pairs reordered into `variable_names` order for a platform.
+//
+// A name the platform's list does not carry keeps its place after the
+// ones it does, because `with_variable` accepts a name this package
+// does not read and dropping it would lose it.
+fn ordered(p: dfplat.DfPlatform, values: [(Str, Str)]) -> [(Str, Str)]
+    let names = variable_names(p)
+    var out: [(Str, Str)] = []
+    for name in names
+        for pair in values
+            if pair.0 == name
+                out = list.push(out, pair)
+    for pair in values
+        if not list.contains(names, pair.0)
+            out = list.push(out, pair)
+    out
+
+// The one place a `DfEnv` is built.
+//
+// Everything that answers a new snapshot goes through here, so the
+// home directory loses its trailing separator and the pairs land in
+// `variable_names` order in exactly one place.
+fn mk(p: dfplat.DfPlatform, home_dir: Str, values: [(Str, Str)]) -> DfEnv
+    DfEnv { platform: p, home: trimmed(home_dir), values: ordered(p, values) }
+
+// The environment of this process, resolved by a platform's rules.
+//
+// One `env.get` per name in `variable_names`, plus `env.home` for a
+// platform whose own variable for it is unset.  A variable set to the
+// empty string is left out, because the specification treats it as
+// unset and so does `is_set`.
+fn read(p: dfplat.DfPlatform) -> DfEnv [io]
+    var pairs: [(Str, Str)] = []
+    for name in variable_names(p)
+        let v = env.get(name) ?? ""
+        if v != ""
+            pairs = list.push(pairs, (name, v))
+    let own = env.get(home_variable(p)) ?? ""
+    let fallback = env.home()
+    let home_dir = if own != ""
+        own
+    else
+        fallback
+    mk(p, home_dir, pairs)
 
 // Read the environment of the process this is running in.
 //
@@ -179,7 +281,7 @@ pub fn variable_names(p: dfplat.DfPlatform) -> [Str] []
 //     println(dfbase.config_dir(e))
 // ```
 pub fn capture() -> DfEnv [io]
-    todo("datafile-nv.dfenv.capture")
+    capture_for(dfplat.current_platform())
 
 // Read the environment, but answer for a platform the caller names.
 //
@@ -198,7 +300,7 @@ pub fn capture() -> DfEnv [io]
 //     println(dfbase.config_dir(e))
 // ```
 pub fn capture_for(p: dfplat.DfPlatform) -> DfEnv [io]
-    todo("datafile-nv.dfenv.capture_for")
+    read(p)
 
 // An environment built by hand, with no environment and no disk.
 //
@@ -216,7 +318,7 @@ pub fn capture_for(p: dfplat.DfPlatform) -> DfEnv [io]
 //     println(dfbase.cache_dir(e))
 // ```
 pub fn of(p: dfplat.DfPlatform, home: Str, values: [(Str, Str)]) -> DfEnv []
-    todo("datafile-nv.dfenv.of")
+    mk(p, home, values)
 
 // An environment with no variables set at all, for the platform named.
 //
@@ -231,7 +333,7 @@ pub fn of(p: dfplat.DfPlatform, home: Str, values: [(Str, Str)]) -> DfEnv []
 //     println(dfbase.config_dir(dfenv.bare(DfLinux, "/home/ada")))
 // ```
 pub fn bare(p: dfplat.DfPlatform, home: Str) -> DfEnv []
-    todo("datafile-nv.dfenv.bare")
+    of(p, home, [])
 
 // Which convention this environment follows.
 //
@@ -243,7 +345,7 @@ pub fn bare(p: dfplat.DfPlatform, home: Str) -> DfEnv []
 //     println(dfplat.platform_name(dfenv.platform(dfenv.bare(DfLinux, "/h"))))
 // ```
 pub fn platform(e: DfEnv) -> dfplat.DfPlatform []
-    todo("datafile-nv.dfenv.platform")
+    e.platform
 
 // The home directory, absolute and with no trailing separator, or
 // `""`.
@@ -255,7 +357,7 @@ pub fn platform(e: DfEnv) -> dfplat.DfPlatform []
 //     println(dfenv.home(dfenv.bare(DfLinux, "/home/ada/")))
 // ```
 pub fn home(e: DfEnv) -> Str []
-    todo("datafile-nv.dfenv.home")
+    e.home
 
 // The value of a variable in the snapshot, or `""` when it is unset.
 //
@@ -267,7 +369,10 @@ pub fn home(e: DfEnv) -> Str []
 //     println(dfenv.variable(e, "XDG_CACHE_HOME"))
 // ```
 pub fn variable(e: DfEnv, name: Str) -> Str []
-    todo("datafile-nv.dfenv.variable")
+    for pair in e.values
+        if pair.0 == name
+            return pair.1
+    ""
 
 // True when a variable is present in the snapshot with a NON-EMPTY
 // value.
@@ -286,7 +391,7 @@ pub fn variable(e: DfEnv, name: Str) -> Str []
 //     println("${present}")
 // ```
 pub fn is_set(e: DfEnv, name: Str) -> Bool []
-    todo("datafile-nv.dfenv.is_set")
+    variable(e, name) != ""
 
 // True when a variable is set AND its value is absolute by this
 // platform's rules — the XDG rule that a relative override is invalid
@@ -308,7 +413,7 @@ pub fn is_set(e: DfEnv, name: Str) -> Bool []
 //     println("${usable}")
 // ```
 pub fn override_is_usable(e: DfEnv, name: Str) -> Bool []
-    todo("datafile-nv.dfenv.override_is_usable")
+    is_set(e, name) and dfplat.is_absolute(platform(e), variable(e, name))
 
 // The snapshot with one variable set.
 //
@@ -325,7 +430,17 @@ pub fn override_is_usable(e: DfEnv, name: Str) -> Bool []
 //     println(dfbase.cache_dir(e))
 // ```
 pub fn with_variable(e: DfEnv, name: Str, value: Str) -> DfEnv []
-    todo("datafile-nv.dfenv.with_variable")
+    var out: [(Str, Str)] = []
+    var replaced = false
+    for pair in e.values
+        if pair.0 == name
+            out = list.push(out, (name, value))
+            replaced = true
+        else
+            out = list.push(out, pair)
+    if not replaced
+        out = list.push(out, (name, value))
+    mk(platform(e), home(e), out)
 
 // The snapshot with one variable removed.
 //
@@ -338,7 +453,11 @@ pub fn with_variable(e: DfEnv, name: Str, value: Str) -> DfEnv []
 //     println(dfbase.cache_dir(e))
 // ```
 pub fn without_variable(e: DfEnv, name: Str) -> DfEnv []
-    todo("datafile-nv.dfenv.without_variable")
+    var out: [(Str, Str)] = []
+    for pair in e.values
+        if pair.0 != name
+            out = list.push(out, pair)
+    mk(platform(e), home(e), out)
 
 // The snapshot with a different home directory.
 //
@@ -355,7 +474,7 @@ pub fn without_variable(e: DfEnv, name: Str) -> DfEnv []
 //     println(dfbase.data_dir(e))
 // ```
 pub fn with_home(e: DfEnv, home_dir: Str) -> DfEnv []
-    todo("datafile-nv.dfenv.with_home")
+    mk(platform(e), home_dir, e.values)
 
 // The snapshot with a different platform, the variables unchanged.
 //
@@ -370,7 +489,7 @@ pub fn with_home(e: DfEnv, home_dir: Str) -> DfEnv []
 //     println(dfbase.config_dir(dfenv.with_platform(dfenv.capture(), DfMacos)))
 // ```
 pub fn with_platform(e: DfEnv, p: dfplat.DfPlatform) -> DfEnv []
-    todo("datafile-nv.dfenv.with_platform")
+    mk(p, home(e), e.values)
 
 // Every variable in the snapshot, name paired with value, in
 // `variable_names` order.
@@ -387,4 +506,4 @@ pub fn with_platform(e: DfEnv, p: dfplat.DfPlatform) -> DfEnv []
 //         println("${name}=${dfenv.variable(e, name)}")
 // ```
 pub fn variables(e: DfEnv) -> [(Str, Str)] []
-    todo("datafile-nv.dfenv.variables")
+    e.values[:]

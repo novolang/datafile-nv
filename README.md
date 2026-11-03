@@ -8,12 +8,6 @@ Python's [platformdirs](https://platformdirs.readthedocs.io), and the
 [XDG Base Directory Specification](https://specifications.freedesktop.org/basedir-spec/)
 is the authority for the Linux answers.
 
-**Status: NOT IMPLEMENTED — interface only.** Every function is
-declared with its full signature, but every body is a `todo()` that
-panics when called. The package is published so its design can be
-reviewed and depended on before it is implemented. Version 0.1.0 will
-be the first working release.
-
 ## What it is
 
 A **role** is what a directory is for, rather than what a platform
@@ -135,10 +129,7 @@ macOS it prints `/Users/ada/Library/Caches/org.novo-lang.novo` and
 On Windows it prints `C:\Users\ada\AppData\Local\novo-lang\novo` and
 `C:\Users\ada\AppData\Roaming\novo-lang\novo\config.toml`.
 
-Build and test with `novo pkg build` and `novo test`. Today `novo test`
-fails on purpose: every test reaches a `not implemented:
-datafile-nv.<module>.<fn>` panic. The tests are the specification the
-implementation will have to satisfy.
+Build and test with `novo pkg build` and `novo test`.
 
 ## What the package contains
 
@@ -301,12 +292,13 @@ configuration lives here because this variable is set" reads
 ## Tests
 
 ```bash
-novo test tests/dfplat_tests.nv     # 11 tests: the two tables, the joins, absoluteness
-novo test tests/dfbase_tests.nv     # 12 tests: the three platform columns
-novo test tests/dfapp_tests.nv      # 11 tests: the project path and the name rules
-novo test tests/dfuser_tests.nv     # 12 tests: user-dirs.dirs and the defaults
-novo test tests/dfmake_tests.nv     # 12 tests: the modes and the environment value
-novo test tests/dfnovo_tests.nv     # 10 tests: the toolchain layout
+novo test tests/dfplat_tests.nv        # 11 tests: the two tables, the joins, absoluteness
+novo test tests/dfbase_tests.nv        # 12 tests: the three platform columns
+novo test tests/dfapp_tests.nv         # 11 tests: the project path and the name rules
+novo test tests/dfuser_tests.nv        # 12 tests: user-dirs.dirs and the defaults
+novo test tests/dfmake_tests.nv        # 12 tests: the modes and the environment value
+novo test tests/dfnovo_tests.nv        # 10 tests: the toolchain layout and the mode arithmetic
+novo test tests/datafile_edge_tests.nv # 10 tests: every table arm, and the refusals a disk produces
 ```
 
 The expected paths are `directories` 5.x's platform tables, the XDG
@@ -314,37 +306,22 @@ Base Directory Specification for the Linux column, and `platformdirs`
 for the log directory, the version component and the site-wide
 directories.
 
-No test reads the environment, a home directory or a disk. Every suite
-builds its own `DfEnv` with `dfenv.of`, so the macOS column and the
-Windows column are asserted cell by cell on a Linux machine. The suite
-checks that a relative override is rejected and named, that an empty
-variable is unset, that the runtime directory has no invented fallback,
-that a join produces exactly one separator and never a leading one,
-that a Windows path is absolute only with a drive or a share, that the
-project path is spelled three different ways, and that a name with a
-separator in it is refused.
+Almost no test reads the environment, a home directory or a disk.
+Every assertion about a platform is made against a `DfEnv` built with
+`dfenv.of`, so the macOS column and the Windows column are asserted
+cell by cell on a Linux machine. The suites check that a relative
+override is rejected and named, that an empty variable is unset, that
+the runtime directory has no invented fallback, that a join produces
+exactly one separator and never a leading one, that a Windows path is
+absolute only with a drive or a share, that the project path is
+spelled three different ways, and that a name with a separator in it is
+refused.
 
-The tests compile today and fail at run, each on the `not implemented`
-panic that is its body. That is the expected state of an interface
-release. They turn green one at a time as bodies land.
-
-## Implementation status
-
-Nothing is implemented. Every function listed here is declared with its
-signature and its effect row, and every body is a `todo()`.
-
-| Module | Surface | Implemented |
-| --- | --- | --- |
-| `dfplat` | 3 enums, 14 functions | no |
-| `dfenv` | 1 struct, 1 enum, 16 functions, `impl Error for DfFault` | no |
-| `dfbase` | 19 functions | no |
-| `dfapp` | 1 struct, 24 functions | no |
-| `dfuser` | 1 enum, 11 functions | no |
-| `dfmake` | 1 enum, 14 functions | no |
-| `dfnovo` | 1 struct, 15 functions | no |
-
-Effect rows across the package: `[io]` on three functions, `[fs]` on
-sixteen, and nothing at all on the rest.
+The exceptions are the two suites that check the disk, which work
+under `/tmp/novo-datafile-nv-tests` and read the machine's own
+environment once to assert the shape of what comes back rather than
+its values. Nothing is ever deleted: this package cannot delete, on
+purpose.
 
 ## Licence
 

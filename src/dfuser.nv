@@ -1,8 +1,6 @@
 // dfuser.nv — Documents, Downloads, Pictures: the directories that
 // belong to the PERSON rather than to the program.
 //
-// Every body here is a `todo()`; the signatures are the design.
-//
 // THIS IS THE ONE PLACE IN THE PACKAGE THAT READS A FILE.  On Linux
 // the user directories are not in the environment: they are in
 // `$XDG_CONFIG_HOME/user-dirs.dirs`, a shell-shaped file
@@ -41,7 +39,9 @@
 // answers the first, so a caller enumerating a person's fonts gets
 // the whole set and one asking where to install gets one path.
 
+use dfbase
 use dfenv
+use dfplat
 
 // A directory that belongs to the person using the machine.
 //
@@ -81,7 +81,16 @@ pub enum DfUserDir
 //     println(dfuser.user_dir_name(DfPublicShare))
 // ```
 pub fn user_dir_name(d: DfUserDir) -> Str []
-    todo("datafile-nv.dfuser.user_dir_name")
+    match d
+        DfDesktop     => "desktop"
+        DfDocuments   => "documents"
+        DfDownload    => "download"
+        DfMusic       => "music"
+        DfPictures    => "pictures"
+        DfVideos      => "videos"
+        DfPublicShare => "public-share"
+        DfTemplates   => "templates"
+        DfFonts       => "fonts"
 
 // Every user directory, in a stable order.
 //
@@ -92,7 +101,8 @@ pub fn user_dir_name(d: DfUserDir) -> Str []
 //     println("${dfuser.user_dirs().len()}")
 // ```
 pub fn user_dirs() -> [DfUserDir] []
-    todo("datafile-nv.dfuser.user_dirs")
+    [DfDesktop, DfDocuments, DfDownload, DfMusic, DfPictures, DfVideos,
+     DfPublicShare, DfTemplates, DfFonts]
 
 // The key `user-dirs.dirs` writes for a directory:
 // `XDG_DOCUMENTS_DIR`, `XDG_DOWNLOAD_DIR`, and so on.
@@ -106,7 +116,16 @@ pub fn user_dirs() -> [DfUserDir] []
 //     println(dfuser.xdg_key(DfDownload))
 // ```
 pub fn xdg_key(d: DfUserDir) -> Str []
-    todo("datafile-nv.dfuser.xdg_key")
+    match d
+        DfDesktop     => "XDG_DESKTOP_DIR"
+        DfDocuments   => "XDG_DOCUMENTS_DIR"
+        DfDownload    => "XDG_DOWNLOAD_DIR"
+        DfMusic       => "XDG_MUSIC_DIR"
+        DfPictures    => "XDG_PICTURES_DIR"
+        DfVideos      => "XDG_VIDEOS_DIR"
+        DfPublicShare => "XDG_PUBLICSHARE_DIR"
+        DfTemplates   => "XDG_TEMPLATES_DIR"
+        DfFonts       => ""
 
 // Where `user-dirs.dirs` lives in this environment:
 // `<config>/user-dirs.dirs`, or `""` off Linux.
@@ -119,7 +138,35 @@ pub fn xdg_key(d: DfUserDir) -> Str []
 //     println(dfuser.user_dirs_path(dfenv.capture()))
 // ```
 pub fn user_dirs_path(e: dfenv.DfEnv) -> Str []
-    todo("datafile-nv.dfuser.user_dirs_path")
+    if dfenv.platform(e) != DfLinux
+        return ""
+    let base = dfbase.config_dir(e)
+    if base == ""
+        return ""
+    dfplat.join(DfLinux, base, "user-dirs.dirs")
+
+// A value with `$HOME` in it replaced by the home directory.
+//
+// Only that one name is substituted, and only when there is a home to
+// substitute: a `$` in front of anything else is left as the file
+// wrote it, because running it through a shell is the hole this
+// refuses to open.
+fn expand_home(value: Str, home: Str) -> Str
+    if home == ""
+        return value
+    str.replace(value, "\$HOME", home)
+
+// A value with one trailing separator removed.
+//
+// `xdg-user-dirs` writes `"$HOME/"` for a person whose desktop is the
+// home directory itself, and the join onto it would double it.
+fn without_trailing(value: Str) -> Str
+    let n = str.len(value)
+    if n > 1
+        let ch = str.byte_at_or(value, n - 1, 0)
+        if ch == 47 or ch == 92
+            return str.slice(value, 0, n - 1)
+    value
 
 // Parse a `user-dirs.dirs` file into key-value pairs, with `$HOME`
 // expanded and the quotes removed.
@@ -139,7 +186,19 @@ pub fn user_dirs_path(e: dfenv.DfEnv) -> Str []
 //     println("${dfuser.parse_user_dirs(text, "/home/ada").len()}")
 // ```
 pub fn parse_user_dirs(text: Str, home: Str) -> [(Str, Str)] []
-    todo("datafile-nv.dfuser.parse_user_dirs")
+    var out: [(Str, Str)] = []
+    for raw in str.split_lines(text)
+        let line = str.trim(raw)
+        if line == "" or str.starts_with(line, "#")
+            continue
+        let at = str.index(line, "=") ?? -1
+        if at > 0
+            let key = str.trim(str.slice(line, 0, at))
+            let rest = str.slice(line, at + 1, str.len(line))
+            if key != "" and str.len(rest) >= 2 and str.starts_with(rest, "\"") and str.ends_with(rest, "\"")
+                let value = str.slice(rest, 1, str.len(rest) - 1)
+                out = list.push(out, (key, without_trailing(expand_home(value, home))))
+    out
 
 // The directory a parsed `user-dirs.dirs` names for a role, or `""`
 // when it names none.
@@ -156,7 +215,69 @@ pub fn parse_user_dirs(text: Str, home: Str) -> [(Str, Str)] []
 //     println(dfuser.user_dir_from(e, [], DfDocuments))
 // ```
 pub fn user_dir_from(e: dfenv.DfEnv, entries: [(Str, Str)], d: DfUserDir) -> Str []
-    todo("datafile-nv.dfuser.user_dir_from")
+    let key = xdg_key(d)
+    if key != ""
+        for pair in entries
+            if pair.0 == key and pair.1 != ""
+                return pair.1
+    default_user_dir(e, d)
+
+// The base directory joined with a relative suffix, or `""`.
+//
+// A join onto a base that is not there answers the suffix alone, and a
+// font directory called `fonts` relative to nothing is the defect this
+// whole package exists to avoid.
+fn under(p: dfplat.DfPlatform, base: Str, suffix: Str) -> Str
+    if base == ""
+        return ""
+    dfplat.join(p, base, suffix)
+
+// The first entry of `font_dirs`: where this user's own fonts go.
+//
+// macOS puts them under Library, Windows under the local application
+// data, and the XDG column under the data directory.
+fn user_font_dir(e: dfenv.DfEnv) -> Str
+    let p = dfenv.platform(e)
+    if p == DfMacos
+        return under(p, dfenv.home(e), "Library/Fonts")
+    if p == DfWindows
+        return under(p, dfbase.base_dir(e, DfDataLocal), "Microsoft/Windows/Fonts")
+    under(p, dfbase.base_dir(e, DfData), "fonts")
+
+// The font directories that belong to the machine rather than to the
+// user.
+//
+// The Windows entry is the conventional location, written out because
+// no variable this package reads names the system root.
+fn system_font_dirs(e: dfenv.DfEnv) -> [Str]
+    let p = dfenv.platform(e)
+    if p == DfMacos
+        return ["/Library/Fonts"]
+    if p == DfWindows
+        return ["C:\\Windows\\Fonts"]
+    var out: [Str] = []
+    let historical = under(p, dfenv.home(e), ".fonts")
+    if historical != ""
+        out = list.push(out, historical)
+    out
+
+// The English name of a user directory under the home directory.
+//
+// The same three names on every platform on purpose: macOS does not
+// localise the path, and Windows stores a localised one in the
+// registry rather than in the file it is named after.
+fn default_component(d: DfUserDir) -> Str
+    match d
+        DfDesktop     => "Desktop"
+        DfDocuments   => "Documents"
+        DfDownload    => "Downloads"
+        DfMusic       => "Music"
+        DfPictures    => "Pictures"
+        DfVideos      => "Videos"
+        DfPublicShare => "Public"
+        DfTemplates   => "Templates"
+        // cov: skip — a font directory is answered before this table is read; the arm is here so the match covers every role
+        DfFonts       => ""
 
 // The platform's default for a user directory, with no file read:
 // `~/Documents`, `~/Downloads`, and so on.
@@ -172,7 +293,11 @@ pub fn user_dir_from(e: dfenv.DfEnv, entries: [(Str, Str)], d: DfUserDir) -> Str
 //     println(dfuser.default_user_dir(dfenv.bare(DfMacos, "/Users/ada"), DfPictures))
 // ```
 pub fn default_user_dir(e: dfenv.DfEnv, d: DfUserDir) -> Str []
-    todo("datafile-nv.dfuser.default_user_dir")
+    if dfenv.home(e) == ""
+        return ""
+    if d == DfFonts
+        return user_font_dir(e)
+    under(dfenv.platform(e), dfenv.home(e), default_component(d))
 
 // The person's directory for a role, reading `user-dirs.dirs` on
 // Linux.
@@ -190,7 +315,7 @@ pub fn default_user_dir(e: dfenv.DfEnv, d: DfUserDir) -> Str []
 //     println(dfuser.user_dir(dfenv.capture(), DfDownload))
 // ```
 pub fn user_dir(e: dfenv.DfEnv, d: DfUserDir) -> Str [fs]
-    todo("datafile-nv.dfuser.user_dir")
+    user_dir_from(e, read_user_dirs(e), d)
 
 // Every user directory paired with its path, reading `user-dirs.dirs`
 // ONCE.
@@ -206,7 +331,8 @@ pub fn user_dir(e: dfenv.DfEnv, d: DfUserDir) -> Str [fs]
 //     println("${dfuser.all_user_dirs(dfenv.capture()).len()}")
 // ```
 pub fn all_user_dirs(e: dfenv.DfEnv) -> [(DfUserDir, Str)] [fs]
-    todo("datafile-nv.dfuser.all_user_dirs")
+    let entries = read_user_dirs(e)
+    [(d, user_dir_from(e, entries, d)) for d in user_dirs()]
 
 // Read and parse `user-dirs.dirs`, or an empty list when there is
 // none.
@@ -222,7 +348,10 @@ pub fn all_user_dirs(e: dfenv.DfEnv) -> [(DfUserDir, Str)] [fs]
 //     println("${dfuser.read_user_dirs(dfenv.capture()).len()}")
 // ```
 pub fn read_user_dirs(e: dfenv.DfEnv) -> [(Str, Str)] [fs]
-    todo("datafile-nv.dfuser.read_user_dirs")
+    let where = user_dirs_path(e)
+    if where == ""
+        return []
+    parse_user_dirs(fs.read(where) ?? "", dfenv.home(e))
 
 // Every directory fonts are installed in for this user, in precedence
 // order, the per-user ones first.
@@ -242,4 +371,9 @@ pub fn read_user_dirs(e: dfenv.DfEnv) -> [(Str, Str)] [fs]
 //         println(d)
 // ```
 pub fn font_dirs(e: dfenv.DfEnv) -> [Str] []
-    todo("datafile-nv.dfuser.font_dirs")
+    var out: [Str] = []
+    let user = user_font_dir(e)
+    if user != ""
+        out = list.push(out, user)
+    list.append(out, system_font_dirs(e))
+    out

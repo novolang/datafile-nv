@@ -1,8 +1,6 @@
 // dfplat.nv — the three conventions, as tables rather than as three
 // implementations.
 //
-// Every body here is a `todo()`; the signatures are the design.
-//
 // WHAT A DIRECTORIES LIBRARY ACTUALLY IS.  It is two tables and a
 // join.  One table says which environment variable overrides a role on
 // a platform; the other says where the role goes when nothing
@@ -159,7 +157,11 @@ pub enum DfSource
 //     println(dfplat.platform_name(DfWindows))
 // ```
 pub fn platform_name(p: DfPlatform) -> Str []
-    todo("datafile-nv.dfplat.platform_name")
+    match p
+        DfLinux   => "linux"
+        DfMacos   => "macos"
+        DfWindows => "windows"
+        DfOther   => "other"
 
 // The platform an `env.os`-shaped name identifies.
 //
@@ -175,7 +177,11 @@ pub fn platform_name(p: DfPlatform) -> Str []
 //     println(dfplat.platform_name(dfplat.platform_of("windows")))
 // ```
 pub fn platform_of(os_name: Str) -> DfPlatform []
-    todo("datafile-nv.dfplat.platform_of")
+    match os_name
+        "linux"   => DfLinux
+        "macos"   => DfMacos
+        "windows" => DfWindows
+        _         => DfOther
 
 // The platform this process is running on.
 //
@@ -190,7 +196,7 @@ pub fn platform_of(os_name: Str) -> DfPlatform []
 //     println(dfplat.platform_name(dfplat.current_platform()))
 // ```
 pub fn current_platform() -> DfPlatform [io]
-    todo("datafile-nv.dfplat.current_platform")
+    platform_of(env.os())
 
 // The lower-case name of a role: `config`, `cache`, `data`, `state`,
 // `runtime`, `log`, and so on.
@@ -202,7 +208,17 @@ pub fn current_platform() -> DfPlatform [io]
 //     println(dfplat.role_name(DfDataLocal))
 // ```
 pub fn role_name(r: DfRole) -> Str []
-    todo("datafile-nv.dfplat.role_name")
+    match r
+        DfConfig      => "config"
+        DfConfigLocal => "config-local"
+        DfData        => "data"
+        DfDataLocal   => "data-local"
+        DfCache       => "cache"
+        DfState       => "state"
+        DfRuntime     => "runtime"
+        DfLog         => "log"
+        DfPreference  => "preference"
+        DfExecutable  => "executable"
 
 // Every role, in a stable order, for a program that prints its own
 // layout.
@@ -219,7 +235,103 @@ pub fn role_name(r: DfRole) -> Str []
 //     println("${dfplat.roles().len()}")
 // ```
 pub fn roles() -> [DfRole] []
-    todo("datafile-nv.dfplat.roles")
+    [DfConfig, DfConfigLocal, DfData, DfDataLocal, DfCache,
+     DfState, DfRuntime, DfLog, DfPreference, DfExecutable]
+
+// The XDG column of the override table, shared with the platforms
+// nobody named.
+//
+// The five variables the specification defines, plus the roles it has
+// no separate variable for.  A log directory is state, a
+// non-roaming config is config, and a preference is the config
+// directory: answering `""` for those would be inventing a sixth
+// variable.
+fn xdg_override(r: DfRole) -> Str
+    match r
+        DfConfig      => "XDG_CONFIG_HOME"
+        DfConfigLocal => "XDG_CONFIG_HOME"
+        DfData        => "XDG_DATA_HOME"
+        DfDataLocal   => "XDG_DATA_HOME"
+        DfCache       => "XDG_CACHE_HOME"
+        DfState       => "XDG_STATE_HOME"
+        DfRuntime     => "XDG_RUNTIME_DIR"
+        DfLog         => "XDG_STATE_HOME"
+        DfPreference  => "XDG_CONFIG_HOME"
+        DfExecutable  => ""
+
+// The Windows column of the override table.
+//
+// Two folders rather than a variable per role: roaming application
+// data and machine-local application data.  The roles Windows has no
+// directory for answer `""`, which `role_is_absent` reports as a
+// value.
+fn windows_override(r: DfRole) -> Str
+    match r
+        DfConfig      => "APPDATA"
+        DfConfigLocal => "LOCALAPPDATA"
+        DfData        => "APPDATA"
+        DfDataLocal   => "LOCALAPPDATA"
+        DfCache       => "LOCALAPPDATA"
+        DfState       => "APPDATA"
+        DfRuntime     => ""
+        DfLog         => "LOCALAPPDATA"
+        DfPreference  => "APPDATA"
+        DfExecutable  => ""
+
+// The XDG column of the default table, shared with the platforms
+// nobody named.
+//
+// State and logs share one directory because the specification gives
+// them one variable between them, and the runtime directory has no
+// default at all.  `DfNoDefault` is what a caller meets there.
+fn xdg_suffix(r: DfRole) -> Str
+    match r
+        DfConfig      => ".config"
+        DfConfigLocal => ".config"
+        DfData        => ".local/share"
+        DfDataLocal   => ".local/share"
+        DfCache       => ".cache"
+        DfState       => ".local/state"
+        DfRuntime     => ""
+        DfLog         => ".local/state"
+        DfPreference  => ".config"
+        DfExecutable  => ".local/bin"
+
+// The macOS column of the default table.
+//
+// Application Support is where configuration and data both go;
+// Preferences is a different directory and holds the plists, which is
+// the whole reason the preference role exists.
+fn macos_suffix(r: DfRole) -> Str
+    match r
+        DfConfig      => "Library/Application Support"
+        DfConfigLocal => "Library/Application Support"
+        DfData        => "Library/Application Support"
+        DfDataLocal   => "Library/Application Support"
+        DfCache       => "Library/Caches"
+        DfState       => "Library/Application Support"
+        DfRuntime     => ""
+        DfLog         => "Library/Logs"
+        DfPreference  => "Library/Preferences"
+        DfExecutable  => ""
+
+// The Windows column of the default table.
+//
+// Roaming and local application data under the user profile, spelled
+// with the forward slashes every entry in the table carries.  `join`
+// converts them.
+fn windows_suffix(r: DfRole) -> Str
+    match r
+        DfConfig      => "AppData/Roaming"
+        DfConfigLocal => "AppData/Local"
+        DfData        => "AppData/Roaming"
+        DfDataLocal   => "AppData/Local"
+        DfCache       => "AppData/Local"
+        DfState       => "AppData/Roaming"
+        DfRuntime     => ""
+        DfLog         => "AppData/Local"
+        DfPreference  => "AppData/Roaming"
+        DfExecutable  => ""
 
 // THE FIRST TABLE: the environment variable that overrides a role on a
 // platform, or `""` when the role has no override.
@@ -241,7 +353,11 @@ pub fn roles() -> [DfRole] []
 //     println(dfplat.override_variable(DfLinux, DfConfig))
 // ```
 pub fn override_variable(p: DfPlatform, r: DfRole) -> Str []
-    todo("datafile-nv.dfplat.override_variable")
+    if p == DfMacos
+        return ""
+    if p == DfWindows
+        return windows_override(r)
+    xdg_override(r)
 
 // THE SECOND TABLE: where a role goes relative to the home directory
 // when nothing overrides it, or `""` when the platform has no such
@@ -260,7 +376,11 @@ pub fn override_variable(p: DfPlatform, r: DfRole) -> Str []
 //     println(dfplat.default_suffix(DfMacos, DfCache))
 // ```
 pub fn default_suffix(p: DfPlatform, r: DfRole) -> Str []
-    todo("datafile-nv.dfplat.default_suffix")
+    if p == DfMacos
+        return macos_suffix(r)
+    if p == DfWindows
+        return windows_suffix(r)
+    xdg_suffix(r)
 
 // True when this platform has no directory for this role at all.
 //
@@ -277,7 +397,10 @@ pub fn default_suffix(p: DfPlatform, r: DfRole) -> Str []
 //     println("${dfplat.role_is_absent(DfWindows, DfRuntime)}")
 // ```
 pub fn role_is_absent(p: DfPlatform, r: DfRole) -> Bool []
-    todo("datafile-nv.dfplat.role_is_absent")
+    match r
+        DfRuntime    => p == DfMacos or p == DfWindows
+        DfExecutable => p == DfMacos or p == DfWindows
+        _            => false
 
 // The name of a source, for a message: `override`, `default`,
 // `override-rejected`, `no-home`, `no-default`, `role-absent`.
@@ -289,7 +412,13 @@ pub fn role_is_absent(p: DfPlatform, r: DfRole) -> Bool []
 //     println(dfplat.source_name(DfNoHome))
 // ```
 pub fn source_name(s: DfSource) -> Str []
-    todo("datafile-nv.dfplat.source_name")
+    match s
+        DfFromOverride(_)     => "override"
+        DfFromDefault         => "default"
+        DfOverrideRejected(_) => "override-rejected"
+        DfNoHome              => "no-home"
+        DfNoDefault           => "no-default"
+        DfRoleAbsent          => "role-absent"
 
 // The variable a source names, or `""` when it names none.
 //
@@ -300,7 +429,10 @@ pub fn source_name(s: DfSource) -> Str []
 //     println(dfplat.source_variable(DfFromOverride("XDG_CACHE_HOME")))
 // ```
 pub fn source_variable(s: DfSource) -> Str []
-    todo("datafile-nv.dfplat.source_variable")
+    match s
+        DfFromOverride(name)     => name
+        DfOverrideRejected(name) => name
+        _                        => ""
 
 // The path separator a platform writes: `/` or `\`.
 //
@@ -311,7 +443,45 @@ pub fn source_variable(s: DfSource) -> Str []
 //     println(dfplat.separator(DfLinux))
 // ```
 pub fn separator(p: DfPlatform) -> Str []
-    todo("datafile-nv.dfplat.separator")
+    if p == DfWindows
+        "\\"
+    else
+        "/"
+
+// Whether a byte is one of the two path separators.
+//
+// Both are recognised whatever the platform's own separator is: a
+// Windows path a caller passes in can carry either one, and a join
+// that only knew about the platform's own would double it.
+fn is_separator(ch: Int) -> Bool
+    ch == 47 or ch == 92
+
+// A path with any trailing separators removed.
+//
+// The root of a filesystem is nothing but a separator, so the last
+// character is kept and `/` survives as `/`.
+fn strip_trailing(path: Str) -> Str
+    var n = str.len(path)
+    while n > 1 and is_separator(str.byte_at_or(path, n - 1, 0))
+        n = n - 1
+    str.slice(path, 0, n)
+
+// A path with any leading separators removed.
+//
+// Only ever applied to the suffix half of a join, which is relative by
+// construction; the leading separator of an absolute path is what
+// makes it absolute.
+fn strip_leading(path: Str) -> Str
+    var i = 0
+    let n = str.len(path)
+    while i < n and is_separator(str.byte_at_or(path, i, 0))
+        i = i + 1
+    str.slice(path, i, n)
+
+// Whether a byte is an ASCII letter, which is what a Windows drive
+// letter is.
+fn is_letter(ch: Int) -> Bool
+    ch >= 65 and ch <= 90 or ch >= 97 and ch <= 122
 
 // `a` and `b` joined with exactly one of the platform's separators.
 //
@@ -327,7 +497,15 @@ pub fn separator(p: DfPlatform) -> Str []
 //     println(dfplat.join(DfWindows, "C:\\Users\\ada", "AppData"))
 // ```
 pub fn join(p: DfPlatform, a: Str, b: Str) -> Str []
-    todo("datafile-nv.dfplat.join")
+    if a == ""
+        return to_platform(p, b)
+    if b == ""
+        return to_platform(p, a)
+    let left = strip_trailing(a)
+    let right = strip_leading(b)
+    if is_separator(str.byte_at_or(left, str.len(left) - 1, 0))
+        return to_platform(p, left + right)
+    to_platform(p, left + separator(p) + right)
 
 // True when a path is absolute BY THIS PLATFORM'S RULES.
 //
@@ -346,7 +524,16 @@ pub fn join(p: DfPlatform, a: Str, b: Str) -> Str []
 //     println("${ok}")
 // ```
 pub fn is_absolute(p: DfPlatform, path: Str) -> Bool []
-    todo("datafile-nv.dfplat.is_absolute")
+    let n = str.len(path)
+    if n == 0
+        return false
+    if p != DfWindows
+        return str.starts_with(path, "/")
+    if is_separator(str.byte_at_or(path, 0, 0)) and n > 1
+        return is_separator(str.byte_at_or(path, 1, 0))
+    if n >= 3 and str.byte_at_or(path, 1, 0) == 58
+        return is_letter(str.byte_at_or(path, 0, 0)) and is_separator(str.byte_at_or(path, 2, 0))
+    false
 
 // A path with every separator converted to this platform's.
 //
@@ -361,4 +548,7 @@ pub fn is_absolute(p: DfPlatform, path: Str) -> Bool []
 //     println(dfplat.to_platform(DfWindows, "AppData/Roaming"))
 // ```
 pub fn to_platform(p: DfPlatform, path: Str) -> Str []
-    todo("datafile-nv.dfplat.to_platform")
+    if p == DfWindows
+        str.replace(path, "/", "\\")
+    else
+        path

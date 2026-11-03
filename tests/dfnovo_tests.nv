@@ -1,9 +1,6 @@
 // dfnovo_tests.nv — the toolchain's own layout, and the mode
 // arithmetic.
 //
-// RED ON PURPOSE: every body under `src/` is a `todo()`, so every
-// assertion here reaches `not implemented: datafile-nv.<module>.<fn>`.
-//
 // The layout assertions are the package's dogfood: if this table is
 // wrong, `novo`'s own cache cleaner cleans the wrong directory.
 
@@ -73,7 +70,7 @@ fn test_a_version_string_cannot_name_a_directory_outside_versions() [io]
     let l = dfnovo.layout(dfenv.bare(DfLinux, "/home/ada"))
 
     test.case("a traversal is sanitised away")
-    test.assert(str.contains(dfnovo.version_dir(l, "../../.."), "..") == false)
+    test.assert(not str.contains(dfnovo.version_dir(l, "../../.."), ".."))
 
     test.case("and the answer stays under versions")
     let v = dfnovo.version_dir(l, "../../..")
@@ -153,13 +150,13 @@ fn test_private_means_nothing_for_group_or_other() [io]
     test.assert(dfmake.mode_is_private(0b111_000_000))
 
     test.case("0750 is not — the group can enter")
-    test.assert(dfmake.mode_is_private(0b111_101_000) == false)
+    test.assert(not dfmake.mode_is_private(0b111_101_000))
 
     test.case("0701 is not — anyone can execute into it")
-    test.assert(dfmake.mode_is_private(0b111_000_001) == false)
+    test.assert(not dfmake.mode_is_private(0b111_000_001))
 
     test.case("0755, the mode a default umask actually produces, is not")
-    test.assert(dfmake.mode_is_private(0b111_101_101) == false)
+    test.assert(not dfmake.mode_is_private(0b111_101_101))
 
     test.case("0600 is private too; a directory with no execute bit is useless but not shared")
     test.assert(dfmake.mode_is_private(0b110_000_000))

@@ -1,15 +1,10 @@
 [package]
 name        = "datafile-nv"
-version     = "0.0.2"
-description = "Where a program's config, data, cache, state, runtime and log directories live on Linux, macOS and Windows.  The environment is read ONCE into a DfEnv value and every directory is arithmetic over it, so the whole platform table is testable on any machine — a Windows layout answers correctly on Linux.  Project-scoped paths, the XDG rule that a relative override is ignored, the mode a secret store needs, and the novo toolchain's own NOVO_HOME layout as a worked example.  Interface only — every body is a todo()."
+version     = "0.1.0"
+description = "Where a program's config, data, cache, state, runtime and log directories live on Linux, macOS and Windows.  The environment is read ONCE into a DfEnv value and every directory is arithmetic over it, so the whole platform table is testable on any machine — a Windows layout answers correctly on Linux.  Project-scoped paths, the XDG rule that a relative override is ignored, the mode a secret store needs, and the novo toolchain's own NOVO_HOME layout as a worked example."
 license     = "Apache-2.0"
 
-# An INTERFACE release: every `pub fn` body is a `todo()`, so the
-# signatures and the effect rows are published and nothing is
-# implemented.  `novo pkg publish` recognises the shape and requires
-# both the draft stability and the 0.0.x version; the first
-# implementation is the 0.1.0 published over it.
-stability   = "draft"
+stability   = "experimental"
 
 # `host`, and the rows are as narrow as the work allows.
 #
@@ -33,7 +28,7 @@ category    = "data"
 tags        = ["directories", "platformdirs", "xdg", "config", "cache", "appdirs", "paths"]
 repository  = "https://github.com/novolang/datafile-nv"
 maintainers = ["novo-lang"]
-novo        = ">= 0.8.9"
+novo        = ">= 0.20.2"
 
 # A library: no `main`, so `novo pkg build` type-checks and
 # effect-checks every module under `src/` and writes no binary.

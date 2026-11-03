@@ -1,7 +1,5 @@
 // dfapp.nv — a program's own directories, under the base ones.
 //
-// Every body here is a `todo()`; the signatures are the design.
-//
 // THE PROJECT PATH IS ONE COMPONENT, AND THE PLATFORMS SPELL IT
 // DIFFERENTLY.  This is the fact `directories` exists to encode and
 // the one a naive port gets wrong.  Given a qualifier, an organization
@@ -40,6 +38,7 @@
 // programs do not want it and a path that grew a `/1` between releases
 // would strand every existing user's configuration.
 
+use dfbase
 use dfenv
 use dfplat
 
@@ -79,7 +78,8 @@ pub struct DfApp
 //     println(dfapp.config_dir(dfenv.bare(DfLinux, "/home/ada"), a))
 // ```
 pub fn app(application: Str) -> DfApp []
-    todo("datafile-nv.dfapp.app")
+    DfApp { qualifier: "", organization: "", application: application,
+            version: "" }
 
 // The full triple, for a program that publishes under a vendor.
 //
@@ -92,7 +92,8 @@ pub fn app(application: Str) -> DfApp []
 //     println(dfapp.config_dir(dfenv.bare(DfMacos, "/Users/ada"), a))
 // ```
 pub fn qualified(qualifier: Str, organization: Str, application: Str) -> DfApp []
-    todo("datafile-nv.dfapp.qualified")
+    DfApp { qualifier: qualifier, organization: organization,
+            application: application, version: "" }
 
 // The same program with an on-disk-format generation appended.
 //
@@ -105,7 +106,8 @@ pub fn qualified(qualifier: Str, organization: Str, application: Str) -> DfApp [
 //     println(dfapp.cache_dir(dfenv.bare(DfLinux, "/home/ada"), a))
 // ```
 pub fn versioned(a: DfApp, version: Str) -> DfApp []
-    todo("datafile-nv.dfapp.versioned")
+    DfApp { qualifier: a.qualifier, organization: a.organization,
+            application: a.application, version: version }
 
 // The first name in the triple that is not usable as a path
 // component, or `None` when all of them are.
@@ -123,7 +125,13 @@ pub fn versioned(a: DfApp, version: Str) -> DfApp []
 //         None    => println("usable")
 // ```
 pub fn check(a: DfApp) -> ?dfenv.DfFault []
-    todo("datafile-nv.dfapp.check")
+    if a.qualifier != "" and not is_component(a.qualifier)
+        return Some(dfenv.DfNameNotAComponent(name: a.qualifier))
+    if a.organization != "" and not is_component(a.organization)
+        return Some(dfenv.DfNameNotAComponent(name: a.organization))
+    if not is_component(a.application)
+        return Some(dfenv.DfNameNotAComponent(name: a.application))
+    None
 
 // True when a string is usable as a single path component: non-empty,
 // not `.`, not `..`, and carrying neither `/` nor a backslash.
@@ -139,7 +147,46 @@ pub fn check(a: DfApp) -> ?dfenv.DfFault []
 //     println("${ok}")
 // ```
 pub fn is_component(name: Str) -> Bool []
-    todo("datafile-nv.dfapp.is_component")
+    if name == "" or name == "." or name == ".."
+        return false
+    not str.contains(name, "/") and not str.contains(name, "\\")
+
+// A name reduced to a single path component.
+//
+// Separators are dropped and the `.` and `..` segments with them, so
+// the failure mode of skipping `check` is a strange directory name
+// rather than a way out of the base directory.
+fn component(name: Str) -> Str
+    var out = ""
+    for part in str.split(str.replace(name, "\\", "/"), "/")
+        if part != "" and part != "." and part != ".."
+            out = out + part
+    out
+
+// The non-empty parts joined with dots.
+//
+// macOS spells a project path as reverse DNS, and a program with no
+// vendor has fewer parts rather than a component that is only a dot.
+fn dotted(first: Str, second: Str, third: Str) -> Str
+    var parts: [Str] = []
+    for part in [first, second, third]
+        if part != ""
+            parts = list.push(parts, part)
+    str.join(parts, ".")
+
+// The project path before the version is appended.
+//
+// The three platforms' spellings of the same idea, each built from
+// whichever of the three names the program actually has.
+fn project_component(p: dfplat.DfPlatform, a: DfApp) -> Str
+    let qualifier = component(a.qualifier)
+    let organization = component(a.organization)
+    let application = component(a.application)
+    if p == DfMacos
+        return dotted(qualifier, organization, application)
+    if p == DfWindows
+        return dfplat.join(p, organization, application)
+    str.lower(application)
 
 // THE TABLE: the one path component — or two, on Windows — that
 // identifies this program on this platform.
@@ -155,7 +202,10 @@ pub fn is_component(name: Str) -> Bool []
 //     println(dfapp.project_path(DfMacos, dfapp.qualified("org", "novo-lang", "novo")))
 // ```
 pub fn project_path(p: dfplat.DfPlatform, a: DfApp) -> Str []
-    todo("datafile-nv.dfapp.project_path")
+    let base = project_component(p, a)
+    if a.version == ""
+        return base
+    dfplat.join(p, base, component(a.version))
 
 // The program's directory for a role: the base directory for that role
 // with the project path joined on, or `""` when the base directory is
@@ -174,7 +224,11 @@ pub fn project_path(p: dfplat.DfPlatform, a: DfApp) -> Str []
 //     println(dfapp.app_dir(dfenv.capture(), dfapp.app("novo"), DfState))
 // ```
 pub fn app_dir(e: dfenv.DfEnv, a: DfApp, r: dfplat.DfRole) -> Str []
-    todo("datafile-nv.dfapp.app_dir")
+    let base = dfbase.base_dir(e, r)
+    if base == ""
+        return ""
+    let p = dfenv.platform(e)
+    dfplat.join(p, base, project_path(p, a))
 
 // Every role paired with this program's directory for it, in
 // `dfplat.roles` order.
@@ -187,7 +241,7 @@ pub fn app_dir(e: dfenv.DfEnv, a: DfApp, r: dfplat.DfRole) -> Str []
 //     println("${dfapp.layout(dfenv.capture(), dfapp.app("novo")).len()}")
 // ```
 pub fn layout(e: dfenv.DfEnv, a: DfApp) -> [(dfplat.DfRole, Str)] []
-    todo("datafile-nv.dfapp.layout")
+    [(r, app_dir(e, a, r)) for r in dfplat.roles()]
 
 // This program's configuration directory.
 //
@@ -199,7 +253,7 @@ pub fn layout(e: dfenv.DfEnv, a: DfApp) -> [(dfplat.DfRole, Str)] []
 //     println(dfapp.config_dir(dfenv.capture(), dfapp.app("novo")))
 // ```
 pub fn config_dir(e: dfenv.DfEnv, a: DfApp) -> Str []
-    todo("datafile-nv.dfapp.config_dir")
+    app_dir(e, a, DfConfig)
 
 // This program's non-roaming configuration directory.
 //
@@ -211,7 +265,7 @@ pub fn config_dir(e: dfenv.DfEnv, a: DfApp) -> Str []
 //     println(dfapp.config_local_dir(dfenv.capture(), dfapp.app("novo")))
 // ```
 pub fn config_local_dir(e: dfenv.DfEnv, a: DfApp) -> Str []
-    todo("datafile-nv.dfapp.config_local_dir")
+    app_dir(e, a, DfConfigLocal)
 
 // This program's data directory.
 //
@@ -223,7 +277,7 @@ pub fn config_local_dir(e: dfenv.DfEnv, a: DfApp) -> Str []
 //     println(dfapp.data_dir(dfenv.capture(), dfapp.app("novo")))
 // ```
 pub fn data_dir(e: dfenv.DfEnv, a: DfApp) -> Str []
-    todo("datafile-nv.dfapp.data_dir")
+    app_dir(e, a, DfData)
 
 // This program's non-roaming data directory.
 //
@@ -235,7 +289,7 @@ pub fn data_dir(e: dfenv.DfEnv, a: DfApp) -> Str []
 //     println(dfapp.data_local_dir(dfenv.capture(), dfapp.app("novo")))
 // ```
 pub fn data_local_dir(e: dfenv.DfEnv, a: DfApp) -> Str []
-    todo("datafile-nv.dfapp.data_local_dir")
+    app_dir(e, a, DfDataLocal)
 
 // This program's cache directory.
 //
@@ -247,7 +301,7 @@ pub fn data_local_dir(e: dfenv.DfEnv, a: DfApp) -> Str []
 //     println(dfapp.cache_dir(dfenv.capture(), dfapp.app("novo")))
 // ```
 pub fn cache_dir(e: dfenv.DfEnv, a: DfApp) -> Str []
-    todo("datafile-nv.dfapp.cache_dir")
+    app_dir(e, a, DfCache)
 
 // This program's state directory.
 //
@@ -259,7 +313,7 @@ pub fn cache_dir(e: dfenv.DfEnv, a: DfApp) -> Str []
 //     println(dfapp.state_dir(dfenv.capture(), dfapp.app("novo")))
 // ```
 pub fn state_dir(e: dfenv.DfEnv, a: DfApp) -> Str []
-    todo("datafile-nv.dfapp.state_dir")
+    app_dir(e, a, DfState)
 
 // This program's runtime directory, or `""` where the platform has
 // none.
@@ -272,7 +326,7 @@ pub fn state_dir(e: dfenv.DfEnv, a: DfApp) -> Str []
 //     println(dfapp.runtime_dir(dfenv.capture(), dfapp.app("novo")))
 // ```
 pub fn runtime_dir(e: dfenv.DfEnv, a: DfApp) -> Str []
-    todo("datafile-nv.dfapp.runtime_dir")
+    app_dir(e, a, DfRuntime)
 
 // This program's log directory.
 //
@@ -284,7 +338,7 @@ pub fn runtime_dir(e: dfenv.DfEnv, a: DfApp) -> Str []
 //     println(dfapp.log_dir(dfenv.capture(), dfapp.app("novo")))
 // ```
 pub fn log_dir(e: dfenv.DfEnv, a: DfApp) -> Str []
-    todo("datafile-nv.dfapp.log_dir")
+    app_dir(e, a, DfLog)
 
 // This program's preference directory.
 //
@@ -296,7 +350,7 @@ pub fn log_dir(e: dfenv.DfEnv, a: DfApp) -> Str []
 //     println(dfapp.preference_dir(dfenv.capture(), dfapp.app("novo")))
 // ```
 pub fn preference_dir(e: dfenv.DfEnv, a: DfApp) -> Str []
-    todo("datafile-nv.dfapp.preference_dir")
+    app_dir(e, a, DfPreference)
 
 // A named file inside this program's directory for a role.
 //
@@ -312,7 +366,10 @@ pub fn preference_dir(e: dfenv.DfEnv, a: DfApp) -> Str []
 //     println(dfapp.app_file(dfenv.capture(), dfapp.app("novo"), DfConfig, "novo.toml"))
 // ```
 pub fn app_file(e: dfenv.DfEnv, a: DfApp, r: dfplat.DfRole, file_name: Str) -> Str []
-    todo("datafile-nv.dfapp.app_file")
+    let dir = app_dir(e, a, r)
+    if dir == ""
+        return ""
+    dfplat.join(dfenv.platform(e), dir, component(file_name))
 
 // A named file in this program's configuration directory.
 //
@@ -324,7 +381,7 @@ pub fn app_file(e: dfenv.DfEnv, a: DfApp, r: dfplat.DfRole, file_name: Str) -> S
 //     println(dfapp.config_file(dfenv.capture(), dfapp.app("novo"), "config.toml"))
 // ```
 pub fn config_file(e: dfenv.DfEnv, a: DfApp, file_name: Str) -> Str []
-    todo("datafile-nv.dfapp.config_file")
+    app_file(e, a, DfConfig, file_name)
 
 // A named file in this program's data directory.
 //
@@ -336,7 +393,7 @@ pub fn config_file(e: dfenv.DfEnv, a: DfApp, file_name: Str) -> Str []
 //     println(dfapp.data_file(dfenv.capture(), dfapp.app("novo"), "index.db"))
 // ```
 pub fn data_file(e: dfenv.DfEnv, a: DfApp, file_name: Str) -> Str []
-    todo("datafile-nv.dfapp.data_file")
+    app_file(e, a, DfData, file_name)
 
 // A named file in this program's cache directory.
 //
@@ -348,7 +405,7 @@ pub fn data_file(e: dfenv.DfEnv, a: DfApp, file_name: Str) -> Str []
 //     println(dfapp.cache_file(dfenv.capture(), dfapp.app("novo"), "resolved.json"))
 // ```
 pub fn cache_file(e: dfenv.DfEnv, a: DfApp, file_name: Str) -> Str []
-    todo("datafile-nv.dfapp.cache_file")
+    app_file(e, a, DfCache, file_name)
 
 // A named file in this program's state directory.
 //
@@ -360,7 +417,7 @@ pub fn cache_file(e: dfenv.DfEnv, a: DfApp, file_name: Str) -> Str []
 //     println(dfapp.state_file(dfenv.capture(), dfapp.app("novo"), "history"))
 // ```
 pub fn state_file(e: dfenv.DfEnv, a: DfApp, file_name: Str) -> Str []
-    todo("datafile-nv.dfapp.state_file")
+    app_file(e, a, DfState, file_name)
 
 // Every directory this program could read a configuration file from,
 // user first, then site — each with the project path joined on.
@@ -376,7 +433,14 @@ pub fn state_file(e: dfenv.DfEnv, a: DfApp, file_name: Str) -> Str []
 //         println(d)
 // ```
 pub fn config_search_path(e: dfenv.DfEnv, a: DfApp) -> [Str] []
-    todo("datafile-nv.dfapp.config_search_path")
+    let p = dfenv.platform(e)
+    let project = project_path(p, a)
+    var out: [Str] = []
+    let user = app_dir(e, a, DfConfig)
+    if user != ""
+        out = list.push(out, user)
+    list.append(out, list.map(dfbase.site_config_dirs(e), d => dfplat.join(p, d, project)))
+    out
 
 // Every file named `file_name` this program could read a configuration
 // from, in precedence order, highest first.
@@ -394,4 +458,6 @@ pub fn config_search_path(e: dfenv.DfEnv, a: DfApp) -> [Str] []
 //         println(p)
 // ```
 pub fn config_file_candidates(e: dfenv.DfEnv, a: DfApp, file_name: Str) -> [Str] []
-    todo("datafile-nv.dfapp.config_file_candidates")
+    let p = dfenv.platform(e)
+    let name = component(file_name)
+    list.map(config_search_path(e, a), d => dfplat.join(p, d, name))

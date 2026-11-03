@@ -1,8 +1,5 @@
 // dfapp_tests.nv — the project path, which is the fact `directories`
 // exists to encode and the one a naive port gets wrong.
-//
-// RED ON PURPOSE: every body under `src/` is a `todo()`, so every
-// assertion here reaches `not implemented: datafile-nv.<module>.<fn>`.
 
 use std.test
 use std.str
@@ -100,20 +97,20 @@ fn test_a_role_the_platform_lacks_stays_empty_here_too() [io]
 @test
 fn test_a_name_that_is_not_a_component_is_refused_by_check() [io]
     test.case("a traversal")
-    test.assert(dfapp.is_component("../etc") == false)
+    test.assert(not dfapp.is_component("../etc"))
 
     test.case("a separator anywhere")
-    test.assert(dfapp.is_component("novo/lang") == false)
+    test.assert(not dfapp.is_component("novo/lang"))
 
     test.case("a backslash too, because Windows joins with one")
-    test.assert(dfapp.is_component("novo\\lang") == false)
+    test.assert(not dfapp.is_component("novo\\lang"))
 
     test.case("the two dot names")
-    test.assert(dfapp.is_component(".") == false)
-    test.assert(dfapp.is_component("..") == false)
+    test.assert(not dfapp.is_component("."))
+    test.assert(not dfapp.is_component(".."))
 
     test.case("empty")
-    test.assert(dfapp.is_component("") == false)
+    test.assert(not dfapp.is_component(""))
 
     test.case("an ordinary name")
     test.assert(dfapp.is_component("novo-lang"))
@@ -145,14 +142,14 @@ fn test_the_join_sanitises_even_when_check_was_skipped() [io]
 
     test.case("a traversal in the application name cannot climb out")
     let escaped = dfapp.config_dir(e, dfapp.app("../../.ssh"))
-    test.assert(str.contains(escaped, "..") == false)
+    test.assert(not str.contains(escaped, ".."))
 
     test.case("and it stays under the base directory")
     test.assert(str.starts_with(escaped, "/home/ada/.config"))
 
     test.case("a traversal in a file name cannot either")
     let f = dfapp.config_file(e, dfapp.app("novo"), "../../.ssh/id_rsa")
-    test.assert(str.contains(f, "..") == false)
+    test.assert(not str.contains(f, ".."))
 
 @test
 fn test_the_config_candidates_are_in_precedence_order() [io]

@@ -1,9 +1,5 @@
 // dfplat_tests.nv — the two tables, read directly.
 //
-// RED ON PURPOSE: every body under `src/` is a `todo()`, so every
-// assertion here reaches `not implemented: datafile-nv.<module>.<fn>`.
-// That is the expected result until the bodies land.
-//
 // The tables are asserted CELL BY CELL rather than through the
 // accessors, because that is the level a port can be checked against
 // its reference at: `directories`' own source names `XDG_CONFIG_HOME`
@@ -118,10 +114,10 @@ fn test_the_roles_a_platform_does_not_carry() [io]
     test.assert(dfplat.role_is_absent(DfWindows, DfExecutable))
 
     test.case("Linux carries the runtime role")
-    test.assert(dfplat.role_is_absent(DfLinux, DfRuntime) == false)
+    test.assert(not dfplat.role_is_absent(DfLinux, DfRuntime))
 
     test.case("every platform carries config")
-    test.assert(dfplat.role_is_absent(DfWindows, DfConfig) == false)
+    test.assert(not dfplat.role_is_absent(DfWindows, DfConfig))
 
 @test
 fn test_an_unknown_platform_reads_the_xdg_column() [io]
@@ -172,7 +168,7 @@ fn test_absoluteness_is_the_platforms_rule() [io]
     test.assert(dfplat.is_absolute(DfLinux, "/srv/data"))
 
     test.case("a relative path is not")
-    test.assert(dfplat.is_absolute(DfLinux, ".config") == false)
+    test.assert(not dfplat.is_absolute(DfLinux, ".config"))
 
     test.case("a drive letter is absolute on Windows")
     test.assert(dfplat.is_absolute(DfWindows, "C:\\Users"))
@@ -184,10 +180,10 @@ fn test_absoluteness_is_the_platforms_rule() [io]
     test.assert(dfplat.is_absolute(DfWindows, "\\\\server\\share"))
 
     test.case("a leading slash alone is NOT absolute on Windows — it names no drive")
-    test.assert(dfplat.is_absolute(DfWindows, "/srv/data") == false)
+    test.assert(not dfplat.is_absolute(DfWindows, "/srv/data"))
 
     test.case("an empty path is never absolute")
-    test.assert(dfplat.is_absolute(DfLinux, "") == false)
+    test.assert(not dfplat.is_absolute(DfLinux, ""))
 
 @test
 fn test_every_role_has_a_name_and_the_list_is_stable() [io]

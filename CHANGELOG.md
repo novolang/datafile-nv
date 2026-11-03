@@ -5,6 +5,90 @@ All notable changes to datafile-nv are recorded here. The format is
 package follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 with the pre-1.0 rule that a breaking change bumps the MINOR number.
 
+## 0.1.0 — 2026-10-11
+
+The **implementation**.  Every `pub fn` under `src/` has a body, the
+seven suites are green, and the interface release's stamps are gone.
+`stability = "experimental"`.
+
+### Added
+
+- `tests/datafile_edge_tests.nv` — ten tests over the arms and the
+  refusals the first six suites did not reach: every role name, a
+  source that names its own variable, the Windows and macOS columns of
+  the site-directory lists, the mode text, the faults `dfmake` answers
+  when what is at a path is a file rather than a directory, and a
+  directory that already exists with a wider mode being tightened
+  rather than believed.
+
+### Changed
+
+- **Twenty-two `== false` comparisons across the suites are spelled
+  `not`.**  The 0.20.2 linter raises `redundant-bool` on each and
+  suggests exactly that rewrite, which is the same predicate.  All
+  twenty-two are pre-existing — the released copies carry the same
+  counts, `dfapp` 8, `dfplat` 5, `dfnovo` 4, `dfmake` 3 and `dfbase` 2
+  — and the assertions' meanings are untouched.
+- Every module under `src/`: the bodies, with no signature and no
+  effect row changed.  A doc sentence that had become false is gone
+  from four of them — `dfmake.octal` no longer claims novo-lang has no
+  octal integer literal, `dfbase.executable_dir` no longer names
+  `$XDG_BIN_HOME`, and `dfenv` and every module header no longer say
+  the bodies panic.  `dfplat`, `dfenv` and `dfbase` were reformatted by
+  `novo fmt`.
+- The mode half is built on `std.fs.file_mode` and
+  `std.fs.set_file_mode`, and the sources spell a mode as `0o700`.  The
+  two 0.0.1 rows that said those primitives did not exist are closed by
+  the toolchain; nothing in this package works around them.
+- Four `// cov: skip` markers, one for each line no suite can run: the
+  three refusals in `dfmake.apply_mode` and `default_component`'s
+  `DfFonts` arm.  `novo pkg publish` prints each region and its reason.
+- README: the interface-release status block and the
+  implementation-status table are gone, the test section lists the
+  seventh suite, and its claim that no test reads the environment or a
+  disk now names the two suites that do and the directory they use.
+- `novo = ">= 0.20.2"`, the version whose `0o` literals and mode
+  primitives the implementation needs.
+
+### Known
+
+- **`NOVO_HOME` is not in `variable_names`.**  The list is the seven
+  XDG variables and `HOME` on Linux, `HOME` on macOS and the four
+  Windows variables, and `capture` reads exactly it.  A captured
+  snapshot therefore never carries `NOVO_HOME`, and
+  `dfnovo.layout(dfenv.capture())` answers `~/.novo` however the
+  variable is set in the process.  Measured: with `NOVO_HOME=/opt/novo`
+  exported, `dfenv.variable(e, "NOVO_HOME")` is `""`.  A caller that
+  wants the variable honoured builds the snapshot with
+  `dfenv.with_variable(e, dfnovo.home_variable(), path)`, which is what
+  `tests/dfnovo_tests.nv` does.  Widening the list is a change to
+  `capture`'s documented environmental footprint and is held for a
+  later release.
+- **The layout's own parts are joined with `/`.**  `DfNovoLayout`
+  carries no platform, so `dfnovo.bin` and its neighbours append a part
+  with a forward slash whatever the platform was, and a Windows root
+  reads `C:\Users\ada\.novo/bin`.  Windows accepts it; a caller that
+  wants the platform's separator on every component must not use this
+  module.
+- **The Windows system font directory is written out as
+  `C:\Windows\Fonts`**, because no variable this package reads names
+  the system root.  `%WINDIR%` would be the honest source and is not
+  read.
+- **Four lines of `src/` are not reached by any suite** — 606 of 610
+  merged lines, 99.3%.  The publish prints 99% with four excused
+  regions.  Three are `apply_mode`'s refusals — a platform that will
+  not report a mode for a directory this process owns, a filesystem
+  that will not take one, and a filesystem that takes the call and
+  keeps other bits than the ones asked for.  A directory this process
+  owns on a Linux filesystem always reports a mode and always takes
+  one, so reaching the first two from a test would mean changing a
+  directory the package does not own, which a suite run as root would
+  really do, and the third needs a filesystem that takes the call and
+  lies.  The fourth is `default_component`'s `DfFonts` arm, which
+  exists for the match to be exhaustive and cannot be reached:
+  `default_user_dir` answers a font directory before the table is
+  consulted.
+
 ## 0.0.2 — 2026-09-15
 
 README rewritten to the package README style guide (docs/writing-a-readme.md); no change to the interface.

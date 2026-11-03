@@ -1,9 +1,6 @@
 // dfuser_tests.nv — the `user-dirs.dirs` parse, which is the one
 // format in this package.
 //
-// RED ON PURPOSE: every body under `src/` is a `todo()`, so every
-// assertion here reaches `not implemented: datafile-nv.<module>.<fn>`.
-//
 // The parse is `[]` and the file read is `[fs]`, so every case that
 // matters is exercised from a string here and the disk appears in
 // exactly two assertions.

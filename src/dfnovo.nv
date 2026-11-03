@@ -1,7 +1,5 @@
 // dfnovo.nv — the worked example: the novo toolchain's own layout.
 //
-// Every body here is a `todo()`; the signatures are the design.
-//
 // THE TOOLCHAIN DOES NOT FOLLOW XDG, AND THAT IS THE POINT OF PUTTING
 // IT HERE.  `novo` keeps everything under one directory — `$NOVO_HOME`,
 // or `~/.novo` — with the installed versions, the current symbolic
@@ -29,7 +27,9 @@
 // asking "why is this not in ~/.cache" wants, and because the day the
 // toolchain moves, this is the table it moves to.
 
+use dfbase
 use dfenv
+use dfplat
 
 // One novo installation's root, and everything under it.
 //
@@ -41,6 +41,18 @@ pub struct DfNovoLayout
     // The installation root: `$NOVO_HOME`, or `<home>/.novo`.
     // Absolute, no trailing separator.
     root: Str
+
+// A path with one trailing separator removed.
+//
+// The root is documented as having none, and one would put a doubled
+// separator in front of every part of the layout.
+fn without_trailing(value: Str) -> Str
+    let n = str.len(value)
+    if n > 1
+        let ch = str.byte_at_or(value, n - 1, 0)
+        if ch == 47 or ch == 92
+            return str.slice(value, 0, n - 1)
+    value
 
 // The layout this environment describes.
 //
@@ -56,7 +68,14 @@ pub struct DfNovoLayout
 //     println(dfnovo.root(dfnovo.layout(dfenv.capture())))
 // ```
 pub fn layout(e: dfenv.DfEnv) -> DfNovoLayout []
-    todo("datafile-nv.dfnovo.layout")
+    let p = dfenv.platform(e)
+    let name = home_variable()
+    if dfenv.override_is_usable(e, name)
+        return DfNovoLayout { root: without_trailing(dfplat.to_platform(p, dfenv.variable(e, name))) }
+    let home_dir = dfenv.home(e)
+    if home_dir == ""
+        return DfNovoLayout { root: "" }
+    DfNovoLayout { root: dfplat.join(p, home_dir, ".novo") }
 
 // A layout rooted at a path the caller names, for a tool operating on
 // an installation that is not its own.
@@ -68,7 +87,7 @@ pub fn layout(e: dfenv.DfEnv) -> DfNovoLayout []
 //     println(dfnovo.bin(dfnovo.layout_at("/opt/novo")))
 // ```
 pub fn layout_at(root: Str) -> DfNovoLayout []
-    todo("datafile-nv.dfnovo.layout_at")
+    DfNovoLayout { root: without_trailing(root) }
 
 // The name of the variable that overrides the root: `NOVO_HOME`.
 //
@@ -83,7 +102,7 @@ pub fn layout_at(root: Str) -> DfNovoLayout []
 //     println(dfnovo.home_variable())
 // ```
 pub fn home_variable() -> Str []
-    todo("datafile-nv.dfnovo.home_variable")
+    "NOVO_HOME"
 
 // The installation root.
 //
@@ -95,7 +114,20 @@ pub fn home_variable() -> Str []
 //     println(dfnovo.root(dfnovo.layout(dfenv.capture())))
 // ```
 pub fn root(l: DfNovoLayout) -> Str []
-    todo("datafile-nv.dfnovo.root")
+    l.root
+
+// A part of the layout inside its parent directory.
+//
+// `""` when the parent is empty, so an installation with no root
+// answers no path rather than one relative to nothing, and the parent
+// itself when the part is empty, so a name that sanitised away to
+// nothing cannot leave a trailing separator.  The separator is the one
+// this module spells the layout with: `DfNovoLayout` carries no
+// platform, so an accessor has none to consult.
+fn under(base: Str, part: Str) -> Str
+    if base == "" or part == ""
+        return base
+    base + "/" + part
 
 // `<root>/bin` — the directory that goes on `PATH`, and a symbolic
 // link to `current/bin`.
@@ -108,7 +140,7 @@ pub fn root(l: DfNovoLayout) -> Str []
 //     println(dfnovo.bin(dfnovo.layout(dfenv.capture())))
 // ```
 pub fn bin(l: DfNovoLayout) -> Str []
-    todo("datafile-nv.dfnovo.bin")
+    under(root(l), "bin")
 
 // `<root>/current` — a symbolic link to the selected version.
 //
@@ -120,7 +152,7 @@ pub fn bin(l: DfNovoLayout) -> Str []
 //     println(dfnovo.current(dfnovo.layout(dfenv.capture())))
 // ```
 pub fn current(l: DfNovoLayout) -> Str []
-    todo("datafile-nv.dfnovo.current")
+    under(root(l), "current")
 
 // `<root>/versions` — one unpacked release per subdirectory.
 //
@@ -132,7 +164,20 @@ pub fn current(l: DfNovoLayout) -> Str []
 //     println(dfnovo.versions(dfnovo.layout(dfenv.capture())))
 // ```
 pub fn versions(l: DfNovoLayout) -> Str []
-    todo("datafile-nv.dfnovo.versions")
+    under(root(l), "versions")
+
+// A name reduced to a single path component.
+//
+// A version can arrive from a network response, so a separator and the
+// `.` and `..` segments with it are removed before the name is appended
+// to a directory: the failure mode is a version that lands in
+// `versions` spelled oddly, never one that lands outside it.
+fn component(name: Str) -> Str
+    var out = ""
+    for part in str.split(str.replace(name, "\\", "/"), "/")
+        if part != "" and part != "." and part != ".."
+            out = out + part
+    out
 
 // `<root>/versions/<version>` — one unpacked release.
 //
@@ -148,7 +193,7 @@ pub fn versions(l: DfNovoLayout) -> Str []
 //     println(dfnovo.version_dir(dfnovo.layout(dfenv.capture()), "0.8.9"))
 // ```
 pub fn version_dir(l: DfNovoLayout, version: Str) -> Str []
-    todo("datafile-nv.dfnovo.version_dir")
+    under(versions(l), component(version))
 
 // `<root>/lib` — the runtime sources an installed compiler links
 // against.
@@ -161,7 +206,7 @@ pub fn version_dir(l: DfNovoLayout, version: Str) -> Str []
 //     println(dfnovo.lib(dfnovo.layout(dfenv.capture())))
 // ```
 pub fn lib(l: DfNovoLayout) -> Str []
-    todo("datafile-nv.dfnovo.lib")
+    under(root(l), "lib")
 
 // `<root>/cache` — everything the toolchain can recompute.
 //
@@ -173,7 +218,7 @@ pub fn lib(l: DfNovoLayout) -> Str []
 //     println(dfnovo.cache(dfnovo.layout(dfenv.capture())))
 // ```
 pub fn cache(l: DfNovoLayout) -> Str []
-    todo("datafile-nv.dfnovo.cache")
+    under(root(l), "cache")
 
 // `<root>/cache/registry/<host>` — the fetched sources of every
 // package this machine has built against.
@@ -191,7 +236,7 @@ pub fn cache(l: DfNovoLayout) -> Str []
 //     println(dfnovo.registry_cache(l, "registry.novo-lang.org"))
 // ```
 pub fn registry_cache(l: DfNovoLayout, host: Str) -> Str []
-    todo("datafile-nv.dfnovo.registry_cache")
+    under(under(cache(l), "registry"), component(host))
 
 // `<root>/cache/registry/<host>/<name>/<version>` — one package's
 // unpacked sources.
@@ -208,7 +253,7 @@ pub fn registry_cache(l: DfNovoLayout, host: Str) -> Str []
 //     println(dfnovo.package_dir(l, "registry.novo-lang.org", "tar-nv", "0.0.2"))
 // ```
 pub fn package_dir(l: DfNovoLayout, host: Str, name: Str, version: Str) -> Str []
-    todo("datafile-nv.dfnovo.package_dir")
+    under(under(registry_cache(l, host), component(name)), component(version))
 
 // `<root>/cache/rt-obj` — the compiled runtime objects, keyed by
 // toolchain.
@@ -225,7 +270,7 @@ pub fn package_dir(l: DfNovoLayout, host: Str, name: Str, version: Str) -> Str [
 //     println(dfnovo.runtime_object_cache(dfnovo.layout(dfenv.capture())))
 // ```
 pub fn runtime_object_cache(l: DfNovoLayout) -> Str []
-    todo("datafile-nv.dfnovo.runtime_object_cache")
+    under(cache(l), "rt-obj")
 
 // Every directory in the layout, name paired with path, in a stable
 // order.
@@ -240,7 +285,10 @@ pub fn runtime_object_cache(l: DfNovoLayout) -> Str []
 //     println("${dfnovo.tree(dfnovo.layout(dfenv.capture())).len()}")
 // ```
 pub fn tree(l: DfNovoLayout) -> [(Str, Str)] []
-    todo("datafile-nv.dfnovo.tree")
+    let c = cache(l)
+    [("root", root(l)), ("bin", bin(l)), ("current", current(l)),
+     ("versions", versions(l)), ("lib", lib(l)), ("cache", c),
+     ("registry", under(c, "registry")), ("rt-obj", under(c, "rt-obj"))]
 
 // Where a part of the layout WOULD live under the platform
 // conventions, for the comparison a person asks for.
@@ -260,4 +308,16 @@ pub fn tree(l: DfNovoLayout) -> [(Str, Str)] []
 //     println(dfnovo.xdg_would_be(dfenv.capture(), "cache"))
 // ```
 pub fn xdg_would_be(e: dfenv.DfEnv, part: Str) -> Str []
-    todo("datafile-nv.dfnovo.xdg_would_be")
+    if part == "bin"
+        return dfbase.executable_dir(e)
+    if part == "versions"
+        return under(under(dfbase.data_dir(e), "novo"), "versions")
+    if part == "lib"
+        return under(under(dfbase.data_dir(e), "novo"), "lib")
+    if part == "cache"
+        return under(dfbase.cache_dir(e), "novo")
+    if part == "registry"
+        return under(under(dfbase.cache_dir(e), "novo"), "registry")
+    if part == "rt-obj"
+        return under(under(dfbase.cache_dir(e), "novo"), "rt-obj")
+    ""
